@@ -7,6 +7,7 @@ import {
 } from "./types";
 import { SelectionController } from "./SelectionController";
 import { generateFreeDrawPath, getFontSize } from "./utils";
+import { StorageService } from "../../services/storageService";
 
 export class CanvasEngine {
     private canvas: HTMLCanvasElement;
@@ -43,6 +44,9 @@ export class CanvasEngine {
     public fontFamily: FontFamily = "normal";
     public fontSize: FontSize = "Medium";
 
+    // Save debounce timer
+    private saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     constructor(canvas: HTMLCanvasElement, canvasId?: string) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d")!;
@@ -55,19 +59,52 @@ export class CanvasEngine {
     }
 
     private init() {
+        // 1. Immediately load from localStorage for instant display
         try {
-            const key = this.canvasId.startsWith("procastify_canvas_") ? this.canvasId : `procastify_canvas_${this.canvasId}`;
+            const key = `procastify_canvas_${this.canvasId}`;
             const stored = localStorage.getItem(key);
             if (stored) {
                 this.shapes = JSON.parse(stored);
             }
-        } catch (e) { console.error("Failed to load shapes"); }
+        } catch (e) { console.error("Failed to load shapes from localStorage"); }
         this.render();
+
+        // 2. Asynchronously fetch from Firestore (source of truth) and update if different
+        this.loadFromFirestore();
+    }
+
+    private async loadFromFirestore() {
+        try {
+            const elements = await StorageService.getCanvasElements(this.canvasId);
+            if (elements && elements.length > 0) {
+                // Only update if Firestore has data (avoid overwriting local with empty)
+                this.shapes = elements as Shape[];
+                this.render();
+            }
+        } catch (e) {
+            console.error("Failed to load shapes from Firestore:", e);
+        }
     }
 
     private save() {
-        const key = this.canvasId.startsWith("procastify_canvas_") ? this.canvasId : `procastify_canvas_${this.canvasId}`;
-        localStorage.setItem(key, JSON.stringify(this.shapes));
+        // Debounced save: wait 500ms after last change before persisting
+        if (this.saveTimeoutId) {
+            clearTimeout(this.saveTimeoutId);
+        }
+        this.saveTimeoutId = setTimeout(() => {
+            this.persistToStorage();
+        }, 500);
+    }
+
+    private async persistToStorage() {
+        try {
+            await StorageService.saveCanvasElements(this.canvasId, this.shapes);
+        } catch (e) {
+            console.error("Failed to save shapes:", e);
+            // Fallback: ensure localStorage is up to date
+            const key = `procastify_canvas_${this.canvasId}`;
+            localStorage.setItem(key, JSON.stringify(this.shapes));
+        }
     }
 
     // --- API ---
@@ -336,6 +373,18 @@ export class CanvasEngine {
                 this.render();
             } else if (this.selectionController.isResizingShape()) {
                 this.selectionController.updateResizing(x, y);
+                this.render();
+            }
+            return;
+        }
+
+        // ERASER (Drag-to-Erase)
+        if (this.activeTool === "eraser" && e.buttons === 1) {
+            const { x, y } = this.getWorldPos(e);
+            const initialCount = this.shapes.length;
+            this.shapes = this.shapes.filter(s => !this.selectionController.isPointInShape(x, y, s));
+            if (this.shapes.length < initialCount) {
+                this.save();
                 this.render();
             }
             return;

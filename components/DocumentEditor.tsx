@@ -1,12 +1,7 @@
 import React from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Highlight from '@tiptap/extension-highlight';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import { common, createLowlight } from 'lowlight';
-import { Bold, Italic, Heading1, Heading2, List, ListOrdered, Quote, Code, Highlighter } from 'lucide-react';
-
-const lowlight = createLowlight(common);
+import { Bold, Italic, Heading1, Heading2, List, ListOrdered, Quote } from 'lucide-react';
 
 interface DocumentEditorProps {
     content: any; // JSON content
@@ -25,8 +20,6 @@ const MenuBar = ({ editor }: { editor: any }) => {
         { icon: List, action: () => editor.chain().focus().toggleBulletList().run(), active: 'bulletList', title: 'Bullet List' },
         { icon: ListOrdered, action: () => editor.chain().focus().toggleOrderedList().run(), active: 'orderedList', title: 'Ordered List' },
         { icon: Quote, action: () => editor.chain().focus().toggleBlockquote().run(), active: 'blockquote', title: 'Quote' },
-        { icon: Code, action: () => editor.chain().focus().toggleCodeBlock().run(), active: 'codeBlock', title: 'Code Block' },
-        { icon: Highlighter, action: () => editor.chain().focus().toggleHighlight().run(), active: 'highlight', title: 'Highlight' },
     ];
 
     return (
@@ -48,13 +41,7 @@ const MenuBar = ({ editor }: { editor: any }) => {
 const DocumentEditor: React.FC<DocumentEditorProps> = ({ content, onUpdate, editable = true }) => {
     const editor = useEditor({
         extensions: [
-            StarterKit.configure({
-                codeBlock: false, // logic handled by extension-code-block-lowlight
-            }),
-            Highlight,
-            CodeBlockLowlight.configure({
-                lowlight,
-            }),
+            StarterKit,
         ],
         content: content || { type: 'doc', content: [] },
         editable: editable,

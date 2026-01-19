@@ -28,8 +28,6 @@ const App: React.FC = () => {
     const [emailInput, setEmailInput] = useState('');
     const [passwordInput, setPasswordInput] = useState('');
     const [authError, setAuthError] = useState('');
-    const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
-    const [pendingAuthId, setPendingAuthId] = useState<string | null>(null);
 
     const deriveName = (email?: string | null) => {
         if (!email) return 'User';
@@ -59,15 +57,7 @@ const App: React.FC = () => {
                 StorageService.setSession(profile);
                 setUser(profile);
                 loadUserData();
-
-
-                const guestSession = StorageService.getGuestSession();
-                if (guestSession && guestSession.id !== profile.id && guestSession.isGuest) {
-                    setPendingAuthId(profile.id);
-                    setShowMigrationPrompt(true);
-                } else {
-                    setView('dashboard');
-                }
+                setView('dashboard');
             } else {
 
                 const guestUser = StorageService.getGuestSession();
@@ -90,8 +80,7 @@ const App: React.FC = () => {
     const loadUserData = async () => {
         try {
             await StorageService.checkLoginStreak();
-            // Trigger Migration for Persistence Fix
-            StorageService.runCalculatedMigration().catch(err => console.error("Migration check failed", err));
+            // Zero Migration: Removed migration check
             const n = await StorageService.getNotes();
             const s = await StorageService.getSummaries();
             const st = await StorageService.getStats();
@@ -131,30 +120,6 @@ const App: React.FC = () => {
             console.error(e);
             setAuthError(e.message || 'Authentication failed');
         }
-    };
-
-    const handleMigrationChoice = async (migrate: boolean) => {
-        if (!pendingAuthId) return;
-        const guestUser = StorageService.getGuestSession();
-
-        if (migrate && guestUser) {
-            await StorageService.migrateData(guestUser.id, pendingAuthId);
-        }
-
-
-        localStorage.removeItem('procastify_session');
-
-
-        const profile = await StorageService.getUserProfile(pendingAuthId);
-        if (profile) {
-            StorageService.setSession(profile);
-            setUser(profile);
-            loadUserData();
-        }
-
-        setShowMigrationPrompt(false);
-        setPendingAuthId(null);
-        setView('dashboard');
     };
 
     const handleLogout = async () => {
@@ -417,6 +382,12 @@ const App: React.FC = () => {
                             setNotes(newNotes);
                             StorageService.saveNotes(newNotes);
                         }}
+                        onDeleteNote={async (noteId) => {
+                            // strictly handle the flow: Service(Firestore/Storage) -> Local State
+                            await StorageService.deleteNote(noteId);
+                            setNotes(prev => prev.filter(n => n.id !== noteId));
+                            console.log("[DELETE] Removed from local React state:", noteId);
+                        }}
                         user={user}
                         onNavigate={setView}
                     />
@@ -498,33 +469,6 @@ const App: React.FC = () => {
                                 {isSignUp ? 'Sign In' : 'Sign Up'}
                             </button>
                         </p>
-                    </div>
-                </div>
-            )}
-
-
-            {showMigrationPrompt && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-                    <div className="bg-[#1e1f22] p-8 rounded-2xl w-full max-w-md border border-white/10 shadow-2xl animate-in zoom-in-95">
-                        <div className="flex flex-col items-center text-center mb-6">
-                            <AlertCircle size={48} className="text-[#5865F2] mb-4" />
-                            <h2 className="text-2xl font-bold text-white">Save your work?</h2>
-                            <p className="text-gray-400 mt-2">You have data in Guest Mode. Do you want to move it to your new account?</p>
-                        </div>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => handleMigrationChoice(true)}
-                                className="flex-1 bg-[#5865F2] hover:bg-[#4752c4] text-white font-bold py-3 rounded-xl transition-all"
-                            >
-                                Yes, Keep My Data
-                            </button>
-                            <button
-                                onClick={() => handleMigrationChoice(false)}
-                                className="flex-1 bg-transparent hover:bg-white/5 border border-white/10 text-gray-400 hover:text-white font-bold py-3 rounded-xl transition-all"
-                            >
-                                No, Start Fresh
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}

@@ -8,13 +8,14 @@ import { StorageService } from '../services/storageService';
 interface NotesProps {
     notes: Note[];
     setNotes: (notes: Note[]) => void;
+    onDeleteNote: (id: string) => Promise<void>;
     user: UserPreferences;
     onNavigate: (view: any) => void;
 }
 
 type ViewMode = 'split' | 'document' | 'canvas';
 
-const Notes: React.FC<NotesProps> = ({ notes, setNotes, user, onNavigate }) => {
+const Notes: React.FC<NotesProps> = ({ notes, setNotes, onDeleteNote, user, onNavigate }) => {
     const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const [search, setSearch] = useState('');
@@ -61,9 +62,8 @@ const Notes: React.FC<NotesProps> = ({ notes, setNotes, user, onNavigate }) => {
 
     const deleteNote = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        setNotes(notes.filter(n => n.id !== id));
         if (selectedNoteId === id) setSelectedNoteId(null);
-        await StorageService.deleteNote(id);
+        await onDeleteNote(id);
     };
 
     // Old updateCanvasElements removed as CanvasBoard now handles persistence directly.

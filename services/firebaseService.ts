@@ -4,52 +4,7 @@ import { Note } from '../types';
 
 export const FirebaseService = {
     // --- Data Migration ---
-    migrateNotesToRoot: async (userId: string) => {
-        try {
-            // Check if already migrated (optional optimization could go here, but strict check is safer)
-            // For now, we'll check if user has notes in the old location
-            const oldNotesRef = collection(db, 'users', userId, 'notes');
-            const snapshot = await getDocs(oldNotesRef);
 
-            if (snapshot.empty) return;
-
-            const batch = writeBatch(db);
-            let operationCount = 0;
-
-            snapshot.docs.forEach(docSnap => {
-                const noteData = docSnap.data() as Note;
-                const newRef = doc(db, 'notes', noteData.id);
-
-                // Prepare migration data
-                const migratedNote = {
-                    ...noteData,
-                    ownerId: userId,
-                    createdAt: noteData.createdAt || createTimestampFromDate(noteData.lastModified),
-                    updatedAt: serverTimestamp(), // Mark migration time as update or preserve lastModified? Preserving mostly.
-                    isPublic: noteData.isPublic || false,
-                    publishedAt: noteData.publishedAt ? createTimestampFromDate(noteData.publishedAt) : null,
-                    // Ensure deep objects exist
-                    document: noteData.document || { blocks: [] },
-                    canvas: noteData.canvas || { elements: [], strokes: [] }
-                };
-
-                batch.set(newRef, migratedNote, { merge: true });
-                operationCount++;
-
-                // Add delete for old doc to avoid duplication confusion? 
-                // Plan said "copy", but "move" is cleaner. Let's keep copy for safety unless explicitly asked to delete.
-                // User said "migrate", usually implies move. But keeping safety copy in subcollection might be wise until verified.
-                // I will NOT delete the old ones for safety, but the app will stop reading them.
-            });
-
-            if (operationCount > 0) {
-                await batch.commit();
-                console.log(`Migrated ${operationCount} notes to root collection for user ${userId}`);
-            }
-        } catch (e) {
-            console.error("Migration failed:", e);
-        }
-    },
 
     // --- Notes ---
     saveNote: async (userId: string, note: Note) => {

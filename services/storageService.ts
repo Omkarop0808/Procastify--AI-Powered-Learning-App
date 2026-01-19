@@ -193,80 +193,46 @@ export const StorageService = {
 
 
 
-    migrateData: async (guestId: string, authId: string) => {
 
-        const notes = getLocalUserItems<Note>(LOCAL_KEYS.NOTES, guestId);
-        const summaries = getLocalUserItems<Summary>(LOCAL_KEYS.SUMMARIES, guestId);
-        const queue = getLocalUserItems<QueueItem>(LOCAL_KEYS.QUEUE, guestId);
-        const tasks = getLocalUserItems<RoutineTask>(LOCAL_KEYS.TASKS, guestId);
-        const allStats = getLocalDB<UserStats>(LOCAL_KEYS.STATS);
-        const guestStats = allStats.find(s => s.userId === guestId);
-
-
-        const batch = writeBatch(db);
-
-
-        notes.forEach(item => {
-            const ref = doc(db, 'notes', item.id);
-            // Ensure schema compliance
-            batch.set(ref, {
-                ...item,
-                userId: authId,
-                ownerId: authId,
-                updatedAt: serverTimestamp(),
-                createdAt: item.createdAt || createTimestampFromDate(item.lastModified)
-            }, { merge: true });
-        });
-
-
-        summaries.forEach(item => {
-            const ref = doc(db, 'users', authId, 'summaries', item.id);
-            batch.set(ref, { ...item, userId: authId });
-        });
-
-
-        queue.forEach(item => {
-            const ref = doc(db, 'users', authId, 'queue', item.id);
-            batch.set(ref, { ...item, userId: authId });
-        });
-
-
-        tasks.forEach(item => {
-            const ref = doc(db, 'users', authId, 'tasks', item.id);
-            batch.set(ref, { ...item, userId: authId });
-        });
-
-
-        const quizzes = getLocalUserItems<Quiz>(LOCAL_KEYS.QUIZZES, guestId);
-        quizzes.forEach(item => {
-            const ref = doc(db, 'users', authId, 'quizzes', item.id);
-            batch.set(ref, { ...item, userId: authId });
-        });
-
-
-        if (guestStats) {
-            const statsRef = doc(db, 'users', authId, 'data', 'stats');
-            // We just overwrite or set for simplicity, real app might merge
-            batch.set(statsRef, { ...guestStats, userId: authId, id: `stats_${authId}` });
-        }
-
-        await batch.commit();
-    },
 
 
 
     // --- Notes ---
 
     deleteNote: async (noteId: string) => {
-        if (!currentUserId) return;
+        console.log("[DELETE] Requested delete for note:", noteId);
+        if (!currentUserId) {
+            console.warn("[DELETE] No user session found, aborting delete.");
+            return;
+        }
+
+        // 1. Delete from Firestore (Single Source of Truth)
+        if (!isGuestMode) {
+            try {
+                await FirebaseService.deleteNote(currentUserId, noteId);
+                console.log("[DELETE] Firestore delete success:", noteId);
+            } catch (e) {
+                console.error("[DELETE] Firestore delete failed:", e);
+                throw e; // Stop execution if source of truth fails
+            }
+        }
+
+        // 2. Clear localStorage / Canvas Cache
+        const canvasKey = `procastify_canvas_${noteId}`;
+        if (localStorage.getItem(canvasKey)) {
+            localStorage.removeItem(canvasKey);
+            console.log("[DELETE] Removed from localStorage (canvas cache):", noteId);
+        }
+
+        // 3. Guest Mode - Local Storage "Database" Deletion
         if (isGuestMode) {
             const notes = getLocalUserItems<Note>(LOCAL_KEYS.NOTES, currentUserId);
             const filtered = notes.filter(n => n.id !== noteId);
             saveLocalUserItems(LOCAL_KEYS.NOTES, currentUserId, filtered);
-        } else {
-            // Use FirebaseService
-            await FirebaseService.deleteNote(currentUserId, noteId);
+            console.log("[DELETE] Removed from localStorage (guest db):", noteId);
         }
+
+        console.log("[DELETE] Delete operation completed successfully:", noteId);
     },
 
     saveNote: async (note: Note) => {
@@ -331,6 +297,57 @@ export const StorageService = {
             saveLocalUserItems(LOCAL_KEYS.NOTES, currentUserId, notes);
         } else {
             await FirebaseService.saveNotesBatch(currentUserId, notes);
+        }
+    },
+
+    // --- Canvas Elements (for CanvasBoard) ---
+
+    getCanvasElements: async (noteId: string): Promise<any[]> => {
+        if (!noteId) return [];
+
+        // Try Firestore first (for authenticated users)
+        if (currentUserId && !isGuestMode) {
+            try {
+                const docRef = doc(db, 'notes', noteId);
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                    const data = snap.data();
+                    return data.canvas?.elements || [];
+                }
+            } catch (e) {
+                console.error("Error fetching canvas elements from Firestore:", e);
+            }
+        }
+
+        // Fallback to localStorage
+        const localKey = `procastify_canvas_${noteId}`;
+        const stored = localStorage.getItem(localKey);
+        if (stored) {
+            try {
+                return JSON.parse(stored);
+            } catch { return []; }
+        }
+        return [];
+    },
+
+    saveCanvasElements: async (noteId: string, elements: any[]) => {
+        if (!noteId) return;
+
+        // Always save to localStorage as backup/offline cache
+        const localKey = `procastify_canvas_${noteId}`;
+        localStorage.setItem(localKey, JSON.stringify(elements));
+
+        // Save to Firestore for authenticated users
+        if (currentUserId && !isGuestMode) {
+            try {
+                const docRef = doc(db, 'notes', noteId);
+                await setDoc(docRef, {
+                    canvas: { elements },
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Error saving canvas elements to Firestore:", e);
+            }
         }
     },
 
@@ -452,17 +469,8 @@ export const StorageService = {
             const snap = await getDocs(colRef);
             return snap.docs.map(d => d.data() as T);
         }
-    },
-
-    // Added migration call helper
-    runCalculatedMigration: async () => {
-        if (currentUserId && !isGuestMode) {
-            await FirebaseService.migrateNotesToRoot(currentUserId);
-        }
     }
 };
-
-
 
 const createEmptyStats = (userId: string): UserStats => ({
     id: `stats_${userId}`,
@@ -475,8 +483,6 @@ const createEmptyStats = (userId: string): UserStats => ({
     dailyActivity: {},
     highScore: 0
 });
-
-
 
 export const saveQuiz = async (quiz: Quiz) => {
     return StorageService.saveQuiz(quiz);
