@@ -39,6 +39,16 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         isCorrect: boolean;
     }>>([]);
 
+    // Swipe mode attempted questions
+    interface AttemptedSwipeQuestion {
+        question: string;
+        userAnsweredTrue: boolean;
+        correctAnswerIsTrue: boolean;
+        isCorrect: boolean;
+        explanation: string;
+    }
+    const [attemptedSwipeQuestions, setAttemptedSwipeQuestions] = useState<AttemptedSwipeQuestion[]>([]);
+
     // Timer Logic
     useEffect(() => {
         if (view === 'playing' && mode === 'standard' && !showAnalysis && timer > 0) {
@@ -110,6 +120,7 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         setScore(0);
         setStreak(0);
         setAttemptedQuestions([]);
+        setAttemptedSwipeQuestions([]);
         setSelectedOption(null);
         setShowAnalysis(false);
         setTimer(QUESTION_TIMER);
@@ -314,7 +325,10 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         return (
             <SwipeQuiz
                 questions={quiz.questions}
-                onComplete={(finalScore) => finishQuiz(finalScore * 100)} // Scale score for consistency
+                onComplete={(finalScore, swipeAttempted) => {
+                    setAttemptedSwipeQuestions(swipeAttempted);
+                    finishQuiz(finalScore * 100);
+                }}
                 onExit={() => setView('setup')}
             />
         );
@@ -449,33 +463,132 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         );
     }
 
-    // Results view logic remains the same (truncated here for brevity in logic check, but included in tool call)
-    // Re-pasting results view from previous file content to ensure completeness
-
+    // RESULTS VIEW
     if (view === 'results' && quiz) {
-        const totalQs = attemptedQuestions.length || quiz.questions.length; // Fallback if swipe mode completes
-        // For swipe mode we don't track attemptedQuestions in the same way locally in parent yet?
-        // Wait, SwipeQuiz calls onComplete(score).
-        // If mode is swipe, we might not have populated `attemptedQuestions`. 
-
-        const isSwipe = mode === 'standard' ? false : true;
+        const isSwipeMode = mode === 'swipe';
+        const totalQuestions = isSwipeMode ? attemptedSwipeQuestions.length : attemptedQuestions.length;
+        const correctCount = isSwipeMode
+            ? attemptedSwipeQuestions.filter(q => q.isCorrect).length
+            : attemptedQuestions.filter(q => q.isCorrect).length;
+        const accuracy = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
 
         return (
             <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="h-full flex flex-col items-center p-8 max-w-4xl mx-auto overflow-y-auto"
+                className="h-full flex flex-col p-8 max-w-5xl mx-auto overflow-y-auto"
             >
-                <div className="text-center mb-12">
-                    <Trophy size={100} className="text-yellow-400 mb-6 mx-auto drop-shadow-[0_0_30px_rgba(250,204,21,0.4)]" />
+                {/* Header */}
+                <div className="text-center mb-8">
+                    <Trophy size={80} className="text-yellow-400 mb-4 mx-auto drop-shadow-[0_0_30px_rgba(250,204,21,0.4)]" />
                     <h1 className="text-4xl font-bold text-white mb-2">Quiz Completed!</h1>
-                    <p className="text-xl text-discord-textMuted">You scored <span className="text-discord-accent font-bold">{score}</span> points</p>
+                    <p className="text-xl text-discord-textMuted">You scored <span className="text-discord-accent font-bold">{isSwipeMode ? correctCount : score}</span> {isSwipeMode ? `out of ${totalQuestions}` : 'points'}</p>
                     {score > (stats?.highScore || 0) && score > 0 && (
-                        <p className="text-green-400 font-bold mt-2 animate-bounce">New High Score!</p>
+                        <p className="text-green-400 font-bold mt-2 animate-bounce">🎉 New High Score!</p>
                     )}
                 </div>
 
-                <div className="flex gap-4 mb-8">
+                {/* Summary Stats */}
+                <div className="grid grid-cols-3 gap-4 mb-8">
+                    <div className="bg-discord-panel p-4 rounded-xl border border-white/5 text-center">
+                        <p className="text-discord-textMuted text-xs font-bold uppercase mb-1">Questions</p>
+                        <p className="text-2xl font-bold text-white">{totalQuestions}</p>
+                    </div>
+                    <div className="bg-discord-panel p-4 rounded-xl border border-white/5 text-center">
+                        <p className="text-discord-textMuted text-xs font-bold uppercase mb-1">Correct</p>
+                        <p className="text-2xl font-bold text-green-400">{correctCount}</p>
+                    </div>
+                    <div className="bg-discord-panel p-4 rounded-xl border border-white/5 text-center">
+                        <p className="text-discord-textMuted text-xs font-bold uppercase mb-1">Accuracy</p>
+                        <p className="text-2xl font-bold text-discord-accent">{accuracy}%</p>
+                    </div>
+                </div>
+
+                {/* Detailed Analysis */}
+                <div className="mb-8 flex-1">
+                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                        <BookOpen size={20} /> Detailed Analysis
+                    </h3>
+                    <div className="space-y-4">
+                        {isSwipeMode ? (
+                            // SWIPE MODE RESULTS
+                            attemptedSwipeQuestions.map((q, idx) => (
+                                <motion.div
+                                    key={idx}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className={`p-5 rounded-xl border ${q.isCorrect ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}
+                                >
+                                    <div className="flex items-start gap-3 mb-3">
+                                        <div className={`p-2 rounded-full shrink-0 ${q.isCorrect ? 'bg-green-500' : 'bg-red-500'}`}>
+                                            {q.isCorrect ? <CheckCircle size={18} className="text-white" /> : <XCircle size={18} className="text-white" />}
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-white font-bold text-lg mb-2">Q{idx + 1}. {q.question}</p>
+                                            <div className="flex gap-4 text-sm mb-2">
+                                                <div>
+                                                    <span className="text-discord-textMuted">Correct Answer: </span>
+                                                    <span className="font-bold text-green-400">{q.correctAnswerIsTrue ? 'TRUE' : 'FALSE'}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-discord-textMuted">You answered: </span>
+                                                    <span className={`font-bold ${q.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                                                        {q.userAnsweredTrue ? 'TRUE' : 'FALSE'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <p className="text-discord-textMuted text-sm leading-relaxed bg-discord-bg/50 p-3 rounded-lg">
+                                                {q.explanation}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ))
+                        ) : (
+                            // STANDARD MODE RESULTS
+                            attemptedQuestions.map((q, idx) => (
+                                <motion.div
+                                    key={idx}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className={`p-5 rounded-xl border ${q.isCorrect ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}
+                                >
+                                    <div className="flex items-start gap-3 mb-3">
+                                        <div className={`p-2 rounded-full shrink-0 ${q.isCorrect ? 'bg-green-500' : 'bg-red-500'}`}>
+                                            {q.isCorrect ? <CheckCircle size={18} className="text-white" /> : <XCircle size={18} className="text-white" />}
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-white font-bold text-lg mb-3">Q{idx + 1}. {q.question}</p>
+                                            <div className="mb-2">
+                                                <span className="text-discord-textMuted text-sm">Correct Answer: </span>
+                                                <span className="font-bold text-green-400">{q.options[q.correctAnswer]}</span>
+                                            </div>
+                                            {!q.isCorrect && q.userAnswer !== -1 && (
+                                                <div className="mb-2">
+                                                    <span className="text-discord-textMuted text-sm">Your Answer: </span>
+                                                    <span className="font-bold text-red-400">{q.options[q.userAnswer]}</span>
+                                                </div>
+                                            )}
+                                            {q.userAnswer === -1 && (
+                                                <div className="mb-2">
+                                                    <span className="font-bold text-red-400">⏱️ Time's Up!</span>
+                                                </div>
+                                            )}
+                                            <p className="text-discord-textMuted text-sm leading-relaxed bg-discord-bg/50 p-3 rounded-lg mt-2">
+                                                {q.explanation}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-4 justify-center pt-4 border-t border-white/5">
                     <button onClick={resetToSetup} className="px-8 py-3 bg-discord-panel hover:bg-discord-hover text-white rounded-xl font-bold transition-colors border border-white/10">
                         Back to Setup
                     </button>

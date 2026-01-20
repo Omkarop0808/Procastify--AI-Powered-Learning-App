@@ -3,9 +3,17 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import { Question } from '../types';
 import { Check, X, RotateCcw } from 'lucide-react';
 
+interface AttemptedSwipeQuestion {
+    question: string;
+    userAnsweredTrue: boolean;
+    correctAnswerIsTrue: boolean;
+    isCorrect: boolean;
+    explanation: string;
+}
+
 interface SwipeQuizProps {
     questions: Question[];
-    onComplete: (score: number) => void;
+    onComplete: (score: number, attemptedQuestions: AttemptedSwipeQuestion[]) => void;
     onExit: () => void;
 }
 
@@ -44,6 +52,7 @@ const SwipeQuiz: React.FC<SwipeQuizProps> = ({ questions, onComplete, onExit }) 
     const [currentIndex, setCurrentIndex] = useState(0);
     const [score, setScore] = useState(0);
     const [showResult, setShowResult] = useState<'correct' | 'incorrect' | null>(null);
+    const [attemptedQuestions, setAttemptedQuestions] = useState<AttemptedSwipeQuestion[]>([]);
 
     const handleSwipe = (direction: 'left' | 'right') => {
         const currentQ = questions[currentIndex];
@@ -55,6 +64,16 @@ const SwipeQuiz: React.FC<SwipeQuizProps> = ({ questions, onComplete, onExit }) 
 
         if (isCorrect) setScore(s => s + 1);
 
+        // Track attempted question
+        const attemptedQ: AttemptedSwipeQuestion = {
+            question: currentQ.text,
+            userAnsweredTrue: userChoseTrue,
+            correctAnswerIsTrue: isTrue,
+            isCorrect,
+            explanation: currentQ.explanation
+        };
+        setAttemptedQuestions(prev => [...prev, attemptedQ]);
+
         setShowResult(isCorrect ? 'correct' : 'incorrect');
 
         setTimeout(() => {
@@ -62,7 +81,7 @@ const SwipeQuiz: React.FC<SwipeQuizProps> = ({ questions, onComplete, onExit }) 
             if (currentIndex < questions.length - 1) {
                 setCurrentIndex(i => i + 1);
             } else {
-                onComplete(score + (isCorrect ? 1 : 0));
+                onComplete(score + (isCorrect ? 1 : 0), [...attemptedQuestions, attemptedQ]);
             }
         }, 500);
     };
