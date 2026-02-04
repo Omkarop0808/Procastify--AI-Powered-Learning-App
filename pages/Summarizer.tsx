@@ -725,6 +725,7 @@ const Summarizer: React.FC<SummarizerProps> = ({ onSave, notes, onAddToNote }) =
                                     onChange={(e) => setCustomModeText(e.target.value)}
                                     placeholder="e.g., Technical, Creative, Research Notes"
                                     className="w-full bg-discord-bg border border-white/10 rounded-lg px-4 py-3 text-white placeholder-discord-textMuted/50 focus:outline-none focus:border-discord-accent transition-colors"
+                                    autoFocus
                                 />
                             </div>
 
