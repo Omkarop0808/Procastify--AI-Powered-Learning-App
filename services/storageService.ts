@@ -161,15 +161,29 @@ export const StorageService = {
     checkLoginStreak: async () => {
         if (!currentUserId) return;
         const stats = await StorageService.getStats();
-        const lastDate = new Date(stats.lastLoginDate).toDateString();
-        const today = new Date().toDateString();
+        
+        // Use consistent local date format (YYYY-MM-DD) for comparison
+        const getLocalDateKey = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        const today = getLocalDateKey(new Date());
+        const lastDate = getLocalDateKey(new Date(stats.lastLoginDate));
 
         if (lastDate !== today) {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayKey = getLocalDateKey(yesterday);
+            
             let newStreak = stats.loginStreak;
-            if (lastDate === yesterday.toDateString()) newStreak += 1;
-            else newStreak = 1;
+            if (lastDate === yesterdayKey) {
+                newStreak += 1;
+            } else {
+                newStreak = 1;
+            }
 
             await StorageService.updateStats(s => ({
                 ...s,
@@ -181,7 +195,16 @@ export const StorageService = {
 
     logStudyTime: async (minutes: number) => {
         if (!currentUserId) return;
-        const todayKey = new Date().toISOString().split('T')[0];
+        
+        // Use consistent local date format (YYYY-MM-DD) to match getLast7Days in Dashboard
+        const getLocalDateKey = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        const todayKey = getLocalDateKey(new Date());
         await StorageService.updateStats(s => {
             const currentDaily = s.dailyActivity[todayKey] || 0;
             return {
