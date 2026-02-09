@@ -20,9 +20,6 @@ interface SidebarProps {
   onLogout: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  mobileOpen: boolean;
-  onMobileToggle: () => void;
-  userName?: string;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -78,36 +75,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
-  // --- Mobile NavItem with staggered entrance + animated accent bar ---
-  const MobileNavItem = ({ view, icon: Icon, label }: { view: ViewState; icon: any; label: string }) => {
-    const active = currentView === view;
-    return (
-      <motion.button
-        variants={navItemVariants}
-        onClick={() => handleNavClick(view)}
-        className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-colors duration-200 font-medium group relative touch-manipulation active:scale-[0.97]
-          ${active
-            ? 'bg-discord-accent/15 text-white'
-            : 'text-discord-textMuted hover:bg-white/5 hover:text-white active:bg-white/10'
-          }`}
-      >
-        {/* Animated active indicator bar */}
-        {active && (
-          <motion.div
-            layoutId="mobile-active-indicator"
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-discord-accent rounded-r-full"
-            transition={{ type: 'spring' as const, stiffness: 500, damping: 35 }}
-          />
-        )}
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 ${active ? 'bg-discord-accent/20 shadow-lg shadow-discord-accent/10' : 'bg-white/5 group-hover:bg-white/10'}`}>
-          <Icon size={18} className={`transition-all duration-200 ${active ? 'text-discord-accent' : 'text-discord-textMuted group-hover:text-white'}`} />
-        </div>
-        <span className={`text-[15px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
-        {active && <div className="ml-auto w-2 h-2 bg-discord-accent rounded-full animate-pulse"></div>}
-      </motion.button>
-    );
-  };
-
   return (
     <div
       className={`${collapsed ? "w-20" : "w-64"} bg-gradient-to-b from-[#111214] to-[#0a0b0c] flex flex-col h-screen fixed left-0 top-0 border-r border-white/10 z-50 backdrop-blur-sm transition-all duration-300 ease-in-out`}
@@ -129,16 +96,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 Procastify
               </h1>
             </div>
-          )}
-        </div>
-
-        {/* Toggle Button (Collapsed Only) */}
-        {collapsed && (
-          <div className="px-4 pt-4 flex justify-center">
             <button
               onClick={onToggleCollapse}
-              className="flex items-center justify-center w-10 h-10 text-discord-textMuted hover:text-white hover:bg-discord-hover rounded-lg transition-all duration-300 group"
-              title="Expand sidebar"
+              className="flex items-center justify-center w-8 h-8 text-discord-textMuted hover:text-white hover:bg-discord-hover rounded-lg transition-all duration-300 group"
+              title="Collapse sidebar"
             >
               <PanelLeftClose
                 size={18}
@@ -154,20 +115,15 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
           </div>
         )}
+      </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 flex flex-col justify-evenly gap-1 overflow-y-auto no-scrollbar">
-          {NAV_ITEMS.map((item) => (
-            <DesktopNavItem key={item.view} view={item.view} icon={item.icon} label={item.label} />
-          ))}
-        </nav>
-
-        {/* Logout Button */}
-        <div className={`${collapsed ? 'p-3 mb-4' : 'p-4 mx-4 mb-4'} border-t border-white/10 mt-auto`}>
+      {/* Toggle Button (Collapsed Only) */}
+      {collapsed && (
+        <div className="px-4 pt-4 flex justify-center">
           <button
-            onClick={onLogout}
-            className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all duration-300 font-medium group hover:scale-105 border border-transparent hover:border-red-500/20`}
-            title={collapsed ? "Log Out" : undefined}
+            onClick={onToggleCollapse}
+            className="flex items-center justify-center w-10 h-10 text-discord-textMuted hover:text-white hover:bg-discord-hover rounded-lg transition-all duration-300 group"
+            title="Expand sidebar"
           >
             <PanelLeftOpen
               size={20}
@@ -208,7 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </button>
       </div>
-    </>
+    </div>
   );
 };
 
