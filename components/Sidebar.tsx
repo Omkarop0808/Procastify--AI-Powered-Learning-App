@@ -1,5 +1,5 @@
 import React from "react";
-import { ViewState } from "../types";
+import { ViewState, UserRole } from "../types";
 import {
   LayoutDashboard,
   FileText,
@@ -12,6 +12,8 @@ import {
   Globe,
   PanelLeftClose,
   PanelLeftOpen,
+  GraduationCap,
+  Users,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -20,6 +22,7 @@ interface SidebarProps {
   onLogout: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  userRole?: UserRole;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -28,6 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   collapsed,
   onToggleCollapse,
+  userRole = "student",
 }) => {
   const NavItem = ({
     view,
@@ -136,12 +140,23 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 flex flex-col justify-evenly gap-1 overflow-y-auto no-scrollbar">
         <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
-        <NavItem view="summarizer" icon={FileText} label="Summarizer" />
-        <NavItem view="notes" icon={BookOpen} label="My Notes" />
-        <NavItem view="feed" icon={Flame} label="Learning Feed" />
-        <NavItem view="quiz" icon={Gamepad2} label="Quiz Arena" />
-        <NavItem view="routine" icon={Clock} label="Routine" />
-        <NavItem view="focus" icon={BrainCircuit} label="Focus Mode" />
+        
+        {userRole === "teacher" ? (
+          <>
+            <NavItem view="classrooms" icon={GraduationCap} label="My Classrooms" />
+            <NavItem view="notes" icon={BookOpen} label="My Notes" />
+          </>
+        ) : (
+          <>
+            <NavItem view="summarizer" icon={FileText} label="Summarizer" />
+            <NavItem view="notes" icon={BookOpen} label="My Notes" />
+            <NavItem view="studentClassrooms" icon={Users} label="Classrooms" />
+            <NavItem view="feed" icon={Flame} label="Learning Feed" />
+            <NavItem view="quiz" icon={Gamepad2} label="Quiz Arena" />
+            <NavItem view="routine" icon={Clock} label="Routine" />
+            <NavItem view="focus" icon={BrainCircuit} label="Focus Mode" />
+          </>
+        )}
       </nav>
 
       {/* Logout Button */}

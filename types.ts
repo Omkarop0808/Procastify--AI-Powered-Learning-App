@@ -1,6 +1,7 @@
 export type ViewState =
   | "landing"
   | "onboarding"
+  | "roleSelection"
   | "dashboard"
   | "summarizer"
   | "notes"
@@ -9,16 +10,27 @@ export type ViewState =
   | "quiz"
   | "feed"
   | "store"
-  | "auth";
+  | "auth"
+  | "classrooms"
+  | "classroomDetail"
+  | "studentClassrooms"
+  | "studentClassroomView";
+
 
 export interface UserPreferences {
   id: string;
   isGuest: boolean;
   name: string;
-  freeTimeHours: number;
-  energyPeak: "morning" | "afternoon" | "night";
-  goal: string;
-  distractionLevel: "low" | "medium" | "high";
+  role?: UserRole;
+  freeTimeHours?: number;
+  energyPeak?: "morning" | "afternoon" | "night";
+  goal?: string;
+  distractionLevel?: "low" | "medium" | "high";
+  classroomIds?: string[];
+  teacherPreferences?: {
+    notificationsEnabled: boolean;
+    autoApproveInvitations: boolean;
+  };
 }
 
 export interface UserStats {
@@ -215,4 +227,66 @@ export interface Quiz {
   questions: Question[];
   highScore: number;
   lastPlayed?: number;
+}
+
+// Teacher Role Types
+export type UserRole = "student" | "teacher";
+
+export interface Classroom {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  name: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+  studentIds: string[];
+  invitationCount?: number;
+  announcementCount?: number;
+}
+
+export interface Invitation {
+  id: string;
+  classroomId: string;
+  classroomName: string;
+  teacherId: string;
+  teacherName: string;
+  studentEmail: string;
+  studentId?: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: number;
+  respondedAt?: number;
+}
+
+export interface Announcement {
+  id: string;
+  classroomId: string;
+  teacherId: string;
+  teacherName: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ClassroomResource {
+  id: string;
+  classroomId: string;
+  resourceType: "note" | "quiz";
+  resourceId: string;
+  resourceTitle: string;
+  resourceDescription?: string;
+  sharedBy: string;
+  sharedByName: string;
+  sharedAt: number;
+}
+
+export interface TeacherStats {
+  id: string;
+  userId: string;
+  totalClassrooms: number;
+  totalStudents: number;
+  totalAnnouncements: number;
+  totalResourcesShared: number;
+  pendingInvitations?: number;
+  lastActivityDate: string;
 }

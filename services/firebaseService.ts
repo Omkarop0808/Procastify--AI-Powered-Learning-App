@@ -13,7 +13,7 @@ import {
   orderBy,
   Firestore,
 } from "firebase/firestore";
-import { Note, Folder } from "../types";
+import { Note, Folder, Classroom, Invitation, Announcement, ClassroomResource } from "../types";
 
 export const FirebaseService = {
   // --- Notes ---
@@ -182,6 +182,233 @@ export const FirebaseService = {
     dateKey: string,
     minutes: number,
   ) => {},
+
+  // --- Classrooms ---
+  saveClassroom: async (classroom: Classroom) => {
+    const ref = doc(db, "classrooms", classroom.id);
+    const payload = {
+      ...classroom,
+      createdAt: classroom.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(ref, sanitizePayload(payload), { merge: true });
+  },
+
+  getClassroomsByTeacher: async (teacherId: string): Promise<Classroom[]> => {
+    try {
+      const q = query(
+        collection(db, "classrooms"),
+        where("teacherId", "==", teacherId),
+        orderBy("updatedAt", "desc"),
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+          updatedAt: data.updatedAt?.toMillis
+            ? data.updatedAt.toMillis()
+            : data.updatedAt,
+        } as Classroom;
+      });
+    } catch (e) {
+      console.error("Error fetching classrooms:", e);
+      return [];
+    }
+  },
+
+  getClassroomsByStudent: async (studentId: string): Promise<Classroom[]> => {
+    try {
+      const q = query(
+        collection(db, "classrooms"),
+        where("studentIds", "array-contains", studentId),
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+          updatedAt: data.updatedAt?.toMillis
+            ? data.updatedAt.toMillis()
+            : data.updatedAt,
+        } as Classroom;
+      });
+    } catch (e) {
+      console.error("Error fetching student classrooms:", e);
+      return [];
+    }
+  },
+
+  deleteClassroom: async (classroomId: string) => {
+    const ref = doc(db, "classrooms", classroomId);
+    
+    // Delete announcements subcollection
+    const announcementsRef = collection(db, "classrooms", classroomId, "announcements");
+    const announcementsSnap = await getDocs(announcementsRef);
+    const batch = writeBatch(db);
+    announcementsSnap.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    // Delete resources subcollection
+    const resourcesRef = collection(db, "classrooms", classroomId, "resources");
+    const resourcesSnap = await getDocs(resourcesRef);
+    resourcesSnap.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    
+    // Delete classroom document
+    await deleteDoc(ref);
+  },
+
+  // --- Invitations ---
+  saveInvitation: async (invitation: Invitation) => {
+    const ref = doc(db, "invitations", invitation.id);
+    await setDoc(ref, sanitizePayload(invitation));
+  },
+
+  getInvitationsByEmail: async (email: string, status?: string): Promise<Invitation[]> => {
+    try {
+      let q;
+      if (status) {
+        q = query(
+          collection(db, "invitations"),
+          where("studentEmail", "==", email),
+          where("status", "==", status),
+        );
+      } else {
+        q = query(
+          collection(db, "invitations"),
+          where("studentEmail", "==", email),
+        );
+      }
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+          respondedAt: data.respondedAt?.toMillis
+            ? data.respondedAt.toMillis()
+            : data.respondedAt,
+        } as Invitation;
+      });
+    } catch (e) {
+      console.error("Error fetching invitations:", e);
+      return [];
+    }
+  },
+
+  getInvitationsByClassroom: async (classroomId: string): Promise<Invitation[]> => {
+    try {
+      const q = query(
+        collection(db, "invitations"),
+        where("classroomId", "==", classroomId),
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+          respondedAt: data.respondedAt?.toMillis
+            ? data.respondedAt.toMillis()
+            : data.respondedAt,
+        } as Invitation;
+      });
+    } catch (e) {
+      console.error("Error fetching classroom invitations:", e);
+      return [];
+    }
+  },
+
+  updateInvitation: async (invitationId: string, updates: Partial<Invitation>) => {
+    const ref = doc(db, "invitations", invitationId);
+    await setDoc(ref, sanitizePayload(updates), { merge: true });
+  },
+
+  // --- Announcements ---
+  saveAnnouncement: async (classroomId: string, announcement: Announcement) => {
+    const ref = doc(db, "classrooms", classroomId, "announcements", announcement.id);
+    const payload = {
+      ...announcement,
+      createdAt: announcement.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(ref, sanitizePayload(payload), { merge: true });
+  },
+
+  getAnnouncements: async (classroomId: string): Promise<Announcement[]> => {
+    try {
+      const q = query(
+        collection(db, "classrooms", classroomId, "announcements"),
+        orderBy("createdAt", "desc"),
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+          updatedAt: data.updatedAt?.toMillis
+            ? data.updatedAt.toMillis()
+            : data.updatedAt,
+        } as Announcement;
+      });
+    } catch (e) {
+      console.error("Error fetching announcements:", e);
+      return [];
+    }
+  },
+
+  deleteAnnouncement: async (classroomId: string, announcementId: string) => {
+    const ref = doc(db, "classrooms", classroomId, "announcements", announcementId);
+    await deleteDoc(ref);
+  },
+
+  // --- Resources ---
+  shareResource: async (classroomId: string, resource: ClassroomResource) => {
+    const ref = doc(db, "classrooms", classroomId, "resources", resource.id);
+    await setDoc(ref, sanitizePayload(resource));
+  },
+
+  getResources: async (classroomId: string): Promise<ClassroomResource[]> => {
+    try {
+      const resourcesRef = collection(db, "classrooms", classroomId, "resources");
+      const snap = await getDocs(resourcesRef);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          ...data,
+          sharedAt: data.sharedAt?.toMillis
+            ? data.sharedAt.toMillis()
+            : data.sharedAt,
+        } as ClassroomResource;
+      });
+    } catch (e) {
+      console.error("Error fetching resources:", e);
+      return [];
+    }
+  },
+
+  unshareResource: async (classroomId: string, resourceId: string) => {
+    const ref = doc(db, "classrooms", classroomId, "resources", resourceId);
+    await deleteDoc(ref);
+  },
 };
 
 // Helper to handle Firestore timestamps vs Date/Numbers

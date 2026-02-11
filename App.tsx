@@ -30,6 +30,12 @@ import NoteFeed from "./pages/NoteFeed";
 import NotesStore from "./pages/NotesStore";
 import Folders from "./pages/Folders";
 import Auth from "./pages/Auth";
+import RoleSelection from "./pages/RoleSelection";
+import TeacherDashboard from "./pages/TeacherDashboard";
+import Classrooms from "./pages/Classrooms";
+import ClassroomDetail from "./pages/ClassroomDetail";
+import StudentClassrooms from "./pages/StudentClassrooms";
+import StudentClassroomView from "./pages/StudentClassroomView";
 import { AlertCircle, LogIn, X, Loader2 } from "lucide-react";
 
 const App: React.FC = () => {
@@ -44,6 +50,7 @@ const App: React.FC = () => {
     undefined,
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedClassroomId, setSelectedClassroomId] = useState<string | undefined>(undefined);
 
   // Folder filtering state
   const [activeFolderId, setActiveFolderId] = useState<
@@ -76,7 +83,13 @@ const App: React.FC = () => {
         StorageService.setSession(profile);
         setUser(profile);
         loadUserData();
-        setView("dashboard");
+        
+        // Check if user has selected a role
+        if (!profile.role) {
+          setView("roleSelection");
+        } else {
+          setView("dashboard");
+        }
       } else {
         const guestUser = StorageService.getGuestSession();
         if (guestUser) {
@@ -120,6 +133,16 @@ const App: React.FC = () => {
     setView("dashboard");
   };
 
+  const handleRoleSelected = async (role: "student" | "teacher") => {
+    if (!user) return;
+    
+    const updatedUser = { ...user, role };
+    await StorageService.saveUserProfile(updatedUser);
+    StorageService.setSession(updatedUser);
+    setUser(updatedUser);
+    setView("dashboard");
+  };
+
   const handleLogout = async () => {
     if (user?.isGuest) {
       localStorage.removeItem("procastify_session");
@@ -152,6 +175,9 @@ const App: React.FC = () => {
     } else if (newView === "folders") {
       // Folders view - accessible through Notes page button only
       setActiveFolderId(undefined);
+    } else if (newView === "classroomDetail" || newView === "studentClassroomView") {
+      // Store classroom ID for detail views
+      setSelectedClassroomId(folderId || undefined);
     } else {
       setActiveFolderId(undefined);
     }
@@ -298,6 +324,10 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === "roleSelection") {
+    return <RoleSelection onRoleSelected={handleRoleSelected} />;
+  }
+
   if (!user || view === "landing") {
     return (
       <Landing
@@ -318,6 +348,7 @@ const App: React.FC = () => {
         onLogout={handleLogout}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        userRole={user.role}
       />
       <main
         className={`flex-1 ${sidebarCollapsed ? "ml-20" : "ml-64"} overflow-y-auto max-h-screen relative transition-all duration-300 ease-in-out`}
@@ -336,15 +367,24 @@ const App: React.FC = () => {
         )}
 
         {view === "dashboard" && stats && (
-          <Dashboard
-            user={user}
-            summaries={summaries}
-            notes={notes}
-            stats={stats}
-            onNoteClick={(noteId) => {
-              setView("notes");
-            }}
-          />
+          <>
+            {user.role === "teacher" ? (
+              <TeacherDashboard
+                user={user}
+                onNavigate={handleNavigate}
+              />
+            ) : (
+              <Dashboard
+                user={user}
+                summaries={summaries}
+                notes={notes}
+                stats={stats}
+                onNoteClick={(noteId) => {
+                  setView("notes");
+                }}
+              />
+            )}
+          </>
         )}
 
         {view === "summarizer" && (
@@ -431,6 +471,36 @@ const App: React.FC = () => {
               StorageService.saveNote(newNote);
               setView("notes");
             }}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {view === "classrooms" && (
+          <Classrooms
+            user={user}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {view === "classroomDetail" && selectedClassroomId && (
+          <ClassroomDetail
+            user={user}
+            classroomId={selectedClassroomId}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {view === "studentClassrooms" && (
+          <StudentClassrooms
+            user={user}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {view === "studentClassroomView" && selectedClassroomId && (
+          <StudentClassroomView
+            user={user}
+            classroomId={selectedClassroomId}
             onNavigate={handleNavigate}
           />
         )}
