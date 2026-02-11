@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { CanvasEngine } from "./canvas/CanvasEngine";
 import { ToolType, Shape, StrokeWidth, StrokeStyle, RoughStyle, FillStyle, FontSize } from "./canvas/types";
 import { MousePointer, Hand, Square, Circle, Minus, Pencil, Eraser, Type, Diamond, MoveRight, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
@@ -9,14 +9,35 @@ import { MousePointer, Hand, Square, Circle, Minus, Pencil, Eraser, Type, Diamon
 interface CanvasBoardProps {
     canvasId?: string;
     readOnly?: boolean;
-    elements?: Shape[]; // For stateless/read-only rendering
+    elements?: Shape[];
+    onShapesAdded?: (shapes: Shape[]) => void;
 }
 
-export default function CanvasBoard({ canvasId, readOnly = false, elements }: CanvasBoardProps) {
+export interface CanvasBoardRef {
+    addShapes: (shapes: Shape[]) => void;
+    clear: () => void;
+}
+
+function ToolButton({ icon, active, onClick, title }: { icon: React.ReactNode; active: boolean; onClick: () => void; title?: string }) {
+    return (
+        <button
+            onClick={onClick}
+            title={title}
+            className={`p-2 rounded-md transition-all ${active
+                ? "bg-indigo-600 text-white"
+                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                }`}
+        >
+            {icon}
+        </button>
+    );
+}
+
+const CanvasBoard = forwardRef<CanvasBoardRef, CanvasBoardProps>(({ canvasId, readOnly = false, elements, onShapesAdded }: CanvasBoardProps, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [engine, setEngine] = useState<CanvasEngine | null>(null);
     const [activeTool, setActiveTool] = useState<ToolType>("selection");
-    const [color, setColor] = useState("#ffffff"); // Default White
+    const [color, setColor] = useState("#ffffff");
     const [loading, setLoading] = useState(true);
 
     // New style states
@@ -292,7 +313,7 @@ export default function CanvasBoard({ canvasId, readOnly = false, elements }: Ca
             <div className="collabydraw-textEditorContainer pointer-events-none absolute inset-0 overflow-hidden"></div>
         </div>
     );
-}
+});
 
 // Helper Components
 function ToolButton({ 
