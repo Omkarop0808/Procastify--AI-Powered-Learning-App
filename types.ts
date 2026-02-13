@@ -21,6 +21,7 @@ export interface UserPreferences {
   id: string;
   isGuest: boolean;
   name: string;
+  email?: string; // NEW: Store user email
   role?: UserRole;
   freeTimeHours?: number;
   energyPeak?: "morning" | "afternoon" | "night";
@@ -229,6 +230,60 @@ export interface Quiz {
   lastPlayed?: number;
 }
 
+// Multiplayer Quiz Types
+export type QuizMode = "singleplayer" | "multiplayer";
+
+export interface MultiplayerQuizSession {
+  id: string;
+  hostId: string;
+  hostName: string;
+  inviteCode: string;
+  title: string;
+  difficulty: "easy" | "medium" | "hard";
+  mode: "standard" | "swipe";
+  questions: Question[];
+  participants: QuizParticipant[];
+  status: "waiting" | "in_progress" | "completed";
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  currentQuestionIndex?: number;
+}
+
+export interface QuizParticipant {
+  id: string;
+  userId: string;
+  userName: string;
+  score: number;
+  answers: QuizAnswer[];
+  joinedAt: number;
+  isReady: boolean;
+}
+
+export interface QuizAnswer {
+  questionIndex: number;
+  selectedOption: number;
+  isCorrect: boolean;
+  timeSpent: number;
+  timestamp: number;
+}
+
+export interface QuizLeaderboard {
+  sessionId: string;
+  rankings: QuizRanking[];
+  generatedAt: number;
+}
+
+export interface QuizRanking {
+  userId: string;
+  userName: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  averageTime: number;
+  rank: number;
+}
+
 // Teacher Role Types
 export type UserRole = "student" | "teacher";
 
@@ -243,6 +298,8 @@ export interface Classroom {
   studentIds: string[];
   invitationCount?: number;
   announcementCount?: number;
+  code?: string; // NEW: Unique classroom code for joining
+  codeEnabled?: boolean; // NEW: Toggle code joining
 }
 
 export interface Invitation {
@@ -290,3 +347,25 @@ export interface TeacherStats {
   pendingInvitations?: number;
   lastActivityDate: string;
 }
+
+// Activity Tracking
+export type ActivityType = 
+  | "student_joined" 
+  | "student_accepted_invitation"
+  | "announcement_posted" 
+  | "resource_shared" 
+  | "resource_copied";
+
+export interface Activity {
+  id: string;
+  classroomId: string;
+  classroomName: string;
+  type: ActivityType;
+  actorId: string;
+  actorName: string;
+  targetId?: string;
+  targetName?: string;
+  timestamp: number;
+  metadata?: any;
+}
+

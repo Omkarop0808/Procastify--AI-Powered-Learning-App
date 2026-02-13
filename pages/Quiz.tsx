@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Note, Quiz, UserPreferences, UserStats, QuizReport } from '../types';
 import { generateQuizFromNotes, generateTrueFalseQuiz, generateQuizReport } from '../services/geminiService';
 import { StorageService } from '../services/storageService';
-import { Play, Trophy, CheckCircle, XCircle, Zap, Target, BookOpen, AlertCircle, RefreshCw, Layers, Clock, ArrowRight, BrainCircuit, TrendingUp } from 'lucide-react';
+import { Play, Trophy, CheckCircle, XCircle, Zap, Target, BookOpen, AlertCircle, RefreshCw, Layers, Clock, ArrowRight, BrainCircuit, TrendingUp, Users, Loader2 } from 'lucide-react';
 import SwipeQuiz from '../components/SwipeQuiz';
+import MultiplayerWaitingRoom from '../components/MultiplayerWaitingRoom';
+import MultiplayerLeaderboard from '../components/MultiplayerLeaderboard';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const QUESTION_TIMER = 30;
@@ -17,14 +19,21 @@ interface QuizProps {
 }
 
 const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
-    const [view, setView] = useState<'setup' | 'playing' | 'results'>('setup');
+    const [view, setView] = useState<'setup' | 'playing' | 'results' | 'waiting' | 'leaderboard'>('setup');
     const [mode, setMode] = useState<'standard' | 'swipe'>('standard');
+    const [quizMode, setQuizMode] = useState<'singleplayer' | 'multiplayer'>('singleplayer');
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
     const [loading, setLoading] = useState(false);
     const [continuing, setContinuing] = useState(false);
     const [quizReport, setQuizReport] = useState<QuizReport | null>(null);
     const [generatingReport, setGeneratingReport] = useState(false);
+
+    // Multiplayer state
+    const [multiplayerSession, setMultiplayerSession] = useState<import('../types').MultiplayerQuizSession | null>(null);
+    const [joinCode, setJoinCode] = useState('');
+    const [joiningSession, setJoiningSession] = useState(false);
+    const [leaderboard, setLeaderboard] = useState<import('../types').QuizLeaderboard | null>(null);
 
 
     const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -112,6 +121,42 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
             return;
         }
 
+        // Multiplayer mode
+        if (quizMode === 'multiplayer') {
+            const { FirebaseService } = await import('../services/firebaseService');
+            const sessionId = `quiz_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const inviteCode = FirebaseService.generateQuizCode();
+
+            const session: import('../types').MultiplayerQuizSession = {
+                id: sessionId,
+                hostId: user.id,
+                hostName: user.name,
+                inviteCode,
+                title: 'Multiplayer Quiz',
+                difficulty,
+                mode,
+                questions,
+                participants: [{
+                    id: user.id,
+                    userId: user.id,
+                    userName: user.name,
+                    score: 0,
+                    answers: [],
+                    joinedAt: Date.now(),
+                    isReady: true,
+                }],
+                status: 'waiting',
+                createdAt: Date.now(),
+            };
+
+            await FirebaseService.createQuizSession(session);
+            setMultiplayerSession(session);
+            setLoading(false);
+            setView('waiting');
+            return;
+        }
+
+        // Singleplayer mode (existing logic)
         setQuiz({
             id: Date.now().toString(),
             userId: user.id,
@@ -134,7 +179,56 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         setView('playing');
     };
 
-    const handleOptionSelect = (idx: number) => {
+    const handleJoinQuiz = async () => {
+        if (!joinCode.trim()) {
+            alert('Please enter a quiz code');
+            return;
+        }
+
+        try {
+            setJoiningSession(true);
+            const { FirebaseService } = await import('../services/firebaseService');
+            
+            const session = await FirebaseService.getQuizSessionByCode(joinCode.trim().toUpperCase());
+            if (!session) {
+                alert('Invalid quiz code or quiz already started');
+                setJoiningSession(false);
+                return;
+            }
+
+            // Check if already joined
+            if (session.participants.some(p => p.userId === user.id)) {
+                alert('You have already joined this quiz');
+                setMultiplayerSession(session);
+                setView('waiting');
+                setJoiningSession(false);
+                return;
+            }
+
+            const participant: import('../types').QuizParticipant = {
+                id: user.id,
+                userId: user.id,
+                userName: user.name,
+                score: 0,
+                answers: [],
+                joinedAt: Date.now(),
+                isReady: true,
+            };
+
+            await FirebaseService.joinQuizSession(session.id, participant);
+            
+            const updatedSession = await FirebaseService.getQuizSession(session.id);
+            setMultiplayerSession(updatedSession);
+            setView('waiting');
+            setJoiningSession(false);
+        } catch (error: any) {
+            console.error('Error joining quiz:', error);
+            alert(error.message || 'Failed to join quiz');
+            setJoiningSession(false);
+        }
+    };
+
+    const handleOptionSelect = async (idx: number) => {
         // Allow -1 for timeout
         if (selectedOption !== null || !quiz) return;
 
@@ -144,6 +238,19 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
         const currentQuestion = quiz.questions[currentQIndex];
         const isCorrect = idx === currentQuestion.correctIndex;
 
+        // Multiplayer mode - submit answer to Firebase
+        if (multiplayerSession) {
+            const { FirebaseService } = await import('../services/firebaseService');
+            const answer: import('../types').QuizAnswer = {
+                questionIndex: currentQIndex,
+                selectedOption: idx,
+                isCorrect,
+                timeSpent: QUESTION_TIMER - timer,
+                timestamp: Date.now(),
+            };
+
+            await FirebaseService.submitQuizAnswer(multiplayerSession.id, user.id, answer);
+        }
 
         const attemptedQuestion = {
             question: currentQuestion.text,
@@ -226,6 +333,27 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
     const finishQuiz = async (finalScore?: number) => {
         setGeneratingReport(true);
         const resultScore = finalScore !== undefined ? finalScore : score;
+
+        // Multiplayer mode - generate leaderboard
+        if (multiplayerSession) {
+            const { FirebaseService } = await import('../services/firebaseService');
+            
+            // Update session status to completed
+            await FirebaseService.updateQuizSession(multiplayerSession.id, {
+                status: 'completed',
+                completedAt: Date.now(),
+            });
+
+            // Generate leaderboard
+            const generatedLeaderboard = await FirebaseService.generateLeaderboard(multiplayerSession.id);
+            setLeaderboard(generatedLeaderboard);
+            
+            setGeneratingReport(false);
+            setView('leaderboard');
+            return;
+        }
+
+        // Singleplayer mode (existing logic)
         const currentHighScore = stats?.highScore || 0;
         const newHighScore = resultScore > currentHighScore ? resultScore : currentHighScore;
 
@@ -261,15 +389,15 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="p-8 max-w-4xl mx-auto h-full flex flex-col"
+                className="p-4 md:p-8 max-w-7xl mx-auto h-full flex flex-col overflow-y-auto"
             >
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-discord-accent rounded-xl flex items-center justify-center shadow-lg shadow-discord-accent/20">
                             <Target className="text-white" size={24} />
                         </div>
                         <div>
-                            <h2 className="text-3xl font-bold text-white">Quiz Arena</h2>
+                            <h2 className="text-2xl md:text-3xl font-bold text-white">Quiz Arena</h2>
                             <p className="text-discord-textMuted text-sm">Challenge yourself and beat your high score.</p>
                         </div>
                     </div>
@@ -282,13 +410,13 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 min-h-0">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr,400px] gap-6 flex-1">
 
-                    <div className="lg:col-span-2 flex flex-col min-h-0">
+                    <div className="flex flex-col min-h-0">
                         <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-4 flex items-center gap-2">
                             <BookOpen size={16} /> Select Sources ({selectedNoteIds.length})
                         </h3>
-                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4">
+                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 pb-4 max-h-[500px]">
                             {notes.map(note => (
                                 <div
                                     key={note.id}
@@ -319,10 +447,56 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
                     </div>
 
 
-                    <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-4">
+                        {/* Quiz Mode Selection */}
+                        <div>
+                            <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-3 flex items-center gap-2">
+                                <Users size={16} /> Quiz Mode
+                            </h3>
+                            <div className="grid grid-cols-2 gap-2 bg-discord-panel p-1 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => setQuizMode('singleplayer')}
+                                    className={`py-2 rounded-lg text-sm font-bold transition-all ${quizMode === 'singleplayer' ? 'bg-[#5865F2] text-white shadow-sm' : 'text-discord-textMuted hover:text-white'}`}
+                                >
+                                    Solo
+                                </button>
+                                <button
+                                    onClick={() => setQuizMode('multiplayer')}
+                                    className={`py-2 rounded-lg text-sm font-bold transition-all ${quizMode === 'multiplayer' ? 'bg-[#5865F2] text-white shadow-sm' : 'text-discord-textMuted hover:text-white'}`}
+                                >
+                                    Multiplayer
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Join Quiz Section (Multiplayer Only) */}
+                        {quizMode === 'multiplayer' && (
+                            <div className="bg-[#2b2d31] border border-white/5 rounded-xl p-4">
+                                <h4 className="text-sm font-bold text-white mb-3">Join Existing Quiz</h4>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={joinCode}
+                                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                                        placeholder="Enter code"
+                                        maxLength={6}
+                                        className="flex-1 bg-[#1e1f22] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-[#5865F2] font-mono text-center text-sm"
+                                    />
+                                    <button
+                                        onClick={handleJoinQuiz}
+                                        disabled={joiningSession || !joinCode.trim()}
+                                        className="bg-[#5865F2] hover:bg-[#4752c4] text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        {joiningSession ? <Loader2 className="animate-spin" size={16} /> : 'Join'}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Or create a new quiz below</p>
+                            </div>
+                        )}
+
                         {/* Mode Selection */}
                         <div>
-                            <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-4 flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-3 flex items-center gap-2">
                                 <Layers size={16} /> Mode
                             </h3>
                             <div className="grid grid-cols-2 gap-2 bg-discord-panel p-1 rounded-xl border border-white/5">
@@ -343,7 +517,7 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
 
                         {mode === 'standard' && (
                             <div>
-                                <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-4 flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-discord-textMuted uppercase mb-3 flex items-center gap-2">
                                     <Target size={16} /> Difficulty
                                 </h3>
                                 <div className="flex flex-col gap-2">
@@ -363,22 +537,82 @@ const QuizPage: React.FC<QuizProps> = ({ notes, user, stats, setStats }) => {
                             </div>
                         )}
 
-                        <div className="mt-auto">
+                        <div className="mt-4">
                             <button
                                 onClick={handleGenerate}
                                 disabled={loading || selectedNoteIds.length === 0}
-                                className="w-full bg-discord-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-green-500/20"
+                                className="w-full bg-discord-green hover:bg-green-600 text-white py-4 rounded-xl font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg hover:shadow-green-500/20"
                             >
                                 {loading ? (
                                     <><RefreshCw className="animate-spin" /> Generating...</>
                                 ) : (
-                                    <>Start Quiz <Play size={20} fill="currentColor" /></>
+                                    <>{quizMode === 'multiplayer' ? 'Create Quiz Room' : 'Start Quiz'} <Play size={20} fill="currentColor" /></>
                                 )}
                             </button>
+                            {selectedNoteIds.length === 0 && (
+                                <p className="text-center text-red-400 text-sm mt-3 flex items-center justify-center gap-2">
+                                    <AlertCircle size={16} />
+                                    Select at least one note to create a quiz
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
             </motion.div>
+        );
+    }
+
+    // WAITING ROOM VIEW (Multiplayer)
+    if (view === 'waiting' && multiplayerSession) {
+        return (
+            <MultiplayerWaitingRoom
+                session={multiplayerSession}
+                user={user}
+                isHost={multiplayerSession.hostId === user.id}
+                onStart={() => {
+                    // Load quiz from session
+                    setQuiz({
+                        id: multiplayerSession.id,
+                        userId: user.id,
+                        title: multiplayerSession.title,
+                        questions: multiplayerSession.questions,
+                        highScore: 0
+                    });
+                    setCurrentQIndex(0);
+                    setScore(0);
+                    setStreak(0);
+                    setAttemptedQuestions([]);
+                    setAttemptedSwipeQuestions([]);
+                    setSelectedOption(null);
+                    setShowAnalysis(false);
+                    setTimer(QUESTION_TIMER);
+                    setView('playing');
+                }}
+                onExit={() => {
+                    setMultiplayerSession(null);
+                    setView('setup');
+                }}
+            />
+        );
+    }
+
+    // LEADERBOARD VIEW (Multiplayer)
+    if (view === 'leaderboard' && leaderboard) {
+        return (
+            <MultiplayerLeaderboard
+                leaderboard={leaderboard}
+                user={user}
+                onPlayAgain={() => {
+                    setMultiplayerSession(null);
+                    setLeaderboard(null);
+                    setView('setup');
+                }}
+                onExit={() => {
+                    setMultiplayerSession(null);
+                    setLeaderboard(null);
+                    setView('setup');
+                }}
+            />
         );
     }
 

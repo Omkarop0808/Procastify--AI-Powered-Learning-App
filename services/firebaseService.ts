@@ -13,7 +13,7 @@ import {
   orderBy,
   Firestore,
 } from "firebase/firestore";
-import { Note, Folder, Classroom, Invitation, Announcement, ClassroomResource } from "../types";
+import { Note, Folder, Classroom, Invitation, Announcement, ClassroomResource, Activity } from "../types";
 
 export const FirebaseService = {
   // --- Notes ---
@@ -186,6 +186,13 @@ export const FirebaseService = {
   // --- Classrooms ---
   saveClassroom: async (classroom: Classroom) => {
     const ref = doc(db, "classrooms", classroom.id);
+    
+    // Generate classroom code if not present
+    if (!classroom.code) {
+      classroom.code = FirebaseService.generateClassroomCode(classroom.name);
+      classroom.codeEnabled = true;
+    }
+    
     const payload = {
       ...classroom,
       createdAt: classroom.createdAt || serverTimestamp(),
@@ -408,6 +415,308 @@ export const FirebaseService = {
   unshareResource: async (classroomId: string, resourceId: string) => {
     const ref = doc(db, "classrooms", classroomId, "resources", resourceId);
     await deleteDoc(ref);
+  },
+
+  // --- Activity Tracking ---
+  logActivity: async (activity: Omit<import("../types").Activity, "id">) => {
+    try {
+      const activityId = `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const ref = doc(db, "classrooms", activity.classroomId, "activities", activityId);
+      await setDoc(ref, {
+        ...activity,
+        id: activityId,
+        timestamp: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error logging activity:", e);
+    }
+  },
+
+  getRecentActivities: async (teacherId: string, limit: number = 10) => {
+    try {
+      // Get all classrooms for this teacher
+      const classroomsQuery = query(
+        collection(db, "classrooms"),
+        where("teacherId", "==", teacherId)
+      );
+      const classroomsSnapshot = await getDocs(classroomsQuery);
+      
+      // Fetch activities from all classrooms
+      const allActivities: import("../types").Activity[] = [];
+      
+      for (const classroomDoc of classroomsSnapshot.docs) {
+        const activitiesQuery = query(
+          collection(db, "classrooms", classroomDoc.id, "activities"),
+          orderBy("timestamp", "desc")
+        );
+        const activitiesSnapshot = await getDocs(activitiesQuery);
+        
+        activitiesSnapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          allActivities.push({
+            ...data,
+            timestamp: data.timestamp?.toMillis ? data.timestamp.toMillis() : data.timestamp,
+          } as import("../types").Activity);
+        });
+      }
+      
+      // Sort by timestamp and limit
+      return allActivities
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, limit);
+    } catch (e) {
+      console.error("Error fetching activities:", e);
+      return [];
+    }
+  },
+
+  // --- Classroom Code System ---
+  generateClassroomCode: (classroomName: string): string => {
+    const prefix = classroomName.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'X');
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}-${random}`;
+  },
+
+  joinClassroomByCode: async (studentId: string, studentName: string, code: string) => {
+    try {
+      // Find classroom by code
+      const classroomsQuery = query(
+        collection(db, "classrooms"),
+        where("code", "==", code),
+        where("codeEnabled", "==", true)
+      );
+      const snapshot = await getDocs(classroomsQuery);
+      
+      if (snapshot.empty) {
+        throw new Error("Invalid or disabled classroom code");
+      }
+      
+      const classroomDoc = snapshot.docs[0];
+      const classroom = classroomDoc.data() as import("../types").Classroom;
+      
+      // Check if student already in classroom
+      if (classroom.studentIds.includes(studentId)) {
+        throw new Error("You are already in this classroom");
+      }
+      
+      // Add student to classroom
+      const updatedStudentIds = [...classroom.studentIds, studentId];
+      await setDoc(
+        doc(db, "classrooms", classroomDoc.id),
+        { studentIds: updatedStudentIds, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      
+      // Log activity
+      await FirebaseService.logActivity({
+        classroomId: classroomDoc.id,
+        classroomName: classroom.name,
+        type: "student_joined",
+        actorId: studentId,
+        actorName: studentName,
+        timestamp: Date.now(),
+      });
+      
+      return { ...classroom, id: classroomDoc.id };
+    } catch (e: any) {
+      console.error("Error joining classroom by code:", e);
+      throw e;
+    }
+  },
+
+  validateClassroomCode: async (code: string): Promise<boolean> => {
+    try {
+      const classroomsQuery = query(
+        collection(db, "classrooms"),
+        where("code", "==", code),
+        where("codeEnabled", "==", true)
+      );
+      const snapshot = await getDocs(classroomsQuery);
+      return !snapshot.empty;
+    } catch (e) {
+      console.error("Error validating code:", e);
+      return false;
+    }
+  },
+
+  // --- Multiplayer Quiz System ---
+  generateQuizCode: (): string => {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  },
+
+  createQuizSession: async (session: import("../types").MultiplayerQuizSession) => {
+    try {
+      const ref = doc(db, "quizSessions", session.id);
+      await setDoc(ref, sanitizePayload({
+        ...session,
+        createdAt: serverTimestamp(),
+      }));
+      return session;
+    } catch (e) {
+      console.error("Error creating quiz session:", e);
+      throw e;
+    }
+  },
+
+  getQuizSession: async (sessionId: string): Promise<import("../types").MultiplayerQuizSession | null> => {
+    try {
+      const ref = doc(db, "quizSessions", sessionId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          ...data,
+          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : data.createdAt,
+          startedAt: data.startedAt?.toMillis ? data.startedAt.toMillis() : data.startedAt,
+          completedAt: data.completedAt?.toMillis ? data.completedAt.toMillis() : data.completedAt,
+        } as import("../types").MultiplayerQuizSession;
+      }
+      return null;
+    } catch (e) {
+      console.error("Error getting quiz session:", e);
+      return null;
+    }
+  },
+
+  getQuizSessionByCode: async (code: string): Promise<import("../types").MultiplayerQuizSession | null> => {
+    try {
+      const q = query(
+        collection(db, "quizSessions"),
+        where("inviteCode", "==", code),
+        where("status", "in", ["waiting", "in_progress"])
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        return {
+          ...data,
+          id: snap.docs[0].id,
+          createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : data.createdAt,
+          startedAt: data.startedAt?.toMillis ? data.startedAt.toMillis() : data.startedAt,
+          completedAt: data.completedAt?.toMillis ? data.completedAt.toMillis() : data.completedAt,
+        } as import("../types").MultiplayerQuizSession;
+      }
+      return null;
+    } catch (e) {
+      console.error("Error getting quiz session by code:", e);
+      return null;
+    }
+  },
+
+  updateQuizSession: async (sessionId: string, updates: Partial<import("../types").MultiplayerQuizSession>) => {
+    try {
+      const ref = doc(db, "quizSessions", sessionId);
+      await setDoc(ref, sanitizePayload(updates), { merge: true });
+    } catch (e) {
+      console.error("Error updating quiz session:", e);
+      throw e;
+    }
+  },
+
+  joinQuizSession: async (sessionId: string, participant: import("../types").QuizParticipant) => {
+    try {
+      const session = await FirebaseService.getQuizSession(sessionId);
+      if (!session) throw new Error("Session not found");
+      
+      if (session.status !== "waiting") {
+        throw new Error("Cannot join - quiz already started");
+      }
+
+      const updatedParticipants = [...session.participants, participant];
+      await FirebaseService.updateQuizSession(sessionId, {
+        participants: updatedParticipants,
+      });
+    } catch (e) {
+      console.error("Error joining quiz session:", e);
+      throw e;
+    }
+  },
+
+  leaveQuizSession: async (sessionId: string, userId: string) => {
+    try {
+      const session = await FirebaseService.getQuizSession(sessionId);
+      if (!session) throw new Error("Session not found");
+
+      const updatedParticipants = session.participants.filter(p => p.userId !== userId);
+      
+      // If no participants left, delete the session
+      if (updatedParticipants.length === 0) {
+        const ref = doc(db, "quizSessions", sessionId);
+        await deleteDoc(ref);
+        return;
+      }
+
+      await FirebaseService.updateQuizSession(sessionId, {
+        participants: updatedParticipants,
+      });
+    } catch (e) {
+      console.error("Error leaving quiz session:", e);
+      throw e;
+    }
+  },
+
+  submitQuizAnswer: async (sessionId: string, userId: string, answer: import("../types").QuizAnswer) => {
+    try {
+      const session = await FirebaseService.getQuizSession(sessionId);
+      if (!session) throw new Error("Session not found");
+
+      const updatedParticipants = session.participants.map(p => {
+        if (p.userId === userId) {
+          return {
+            ...p,
+            answers: [...p.answers, answer],
+            score: p.score + (answer.isCorrect ? 100 : 0),
+          };
+        }
+        return p;
+      });
+
+      await FirebaseService.updateQuizSession(sessionId, {
+        participants: updatedParticipants,
+      });
+    } catch (e) {
+      console.error("Error submitting quiz answer:", e);
+      throw e;
+    }
+  },
+
+  generateLeaderboard: async (sessionId: string): Promise<import("../types").QuizLeaderboard> => {
+    try {
+      const session = await FirebaseService.getQuizSession(sessionId);
+      if (!session) throw new Error("Session not found");
+
+      const rankings: import("../types").QuizRanking[] = session.participants
+        .map(p => {
+          const correctAnswers = p.answers.filter(a => a.isCorrect).length;
+          const totalTime = p.answers.reduce((sum, a) => sum + a.timeSpent, 0);
+          const averageTime = p.answers.length > 0 ? totalTime / p.answers.length : 0;
+
+          return {
+            userId: p.userId,
+            userName: p.userName,
+            score: p.score,
+            correctAnswers,
+            totalQuestions: p.answers.length,
+            averageTime,
+            rank: 0, // Will be set after sorting
+          };
+        })
+        .sort((a, b) => {
+          // Sort by score first, then by average time (faster is better)
+          if (b.score !== a.score) return b.score - a.score;
+          return a.averageTime - b.averageTime;
+        })
+        .map((r, index) => ({ ...r, rank: index + 1 }));
+
+      return {
+        sessionId,
+        rankings,
+        generatedAt: Date.now(),
+      };
+    } catch (e) {
+      console.error("Error generating leaderboard:", e);
+      throw e;
+    }
   },
 };
 
