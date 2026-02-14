@@ -91,13 +91,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, summaries, notes, stats, on
 
       {/* ... existing header ... */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-            Welcome back, {user?.name || 'User'} <span className="animate-wave origin-bottom-right inline-block">👋</span>
-          </h1>
-          <p className="text-discord-textMuted mt-1">
-            You're on track with your <strong>{user?.goal || 'study'}</strong> goal.
-          </p>
+        <div className="flex items-center gap-4">
+          {/* User Avatar */}
+          {user?.avatarUrl && (
+            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-discord-accent/30 shadow-lg">
+              <img 
+                src={user.avatarUrl} 
+                alt={`${user.name}'s avatar`}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-white flex items-center gap-2">
+              Welcome back, {user?.name || 'User'} <span className="animate-wave origin-bottom-right inline-block">👋</span>
+            </h1>
+            <p className="text-discord-textMuted mt-1">
+              You're on track with your <strong>{user?.goal || 'study'}</strong> goal.
+            </p>
+          </div>
         </div>
         <div className="bg-discord-panel px-4 py-2 rounded-xl border border-white/5 flex items-center gap-2 text-discord-textMuted text-sm shadow-sm backdrop-blur-sm">
           <Calendar size={16} />

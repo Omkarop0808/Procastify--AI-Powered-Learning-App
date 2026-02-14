@@ -108,12 +108,14 @@ export const StorageService = {
     const timestamp = Date.now();
     const shortId = timestamp.toString().slice(-4);
     const guestId = `guest_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+    const guestName = `Guest #${shortId}`;
 
     return {
       id: guestId,
       isGuest: true,
       role: "student",
-      name: `Guest #${shortId}`,
+      name: guestName,
+      avatarUrl: `https://api.dicebear.com/7.x/notionists/svg?seed=${guestName}`,
       freeTimeHours: 2,
       energyPeak: "morning",
       goal: "Productivity",

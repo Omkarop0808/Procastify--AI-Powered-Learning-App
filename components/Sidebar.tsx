@@ -10,6 +10,7 @@ interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
   userRole?: UserRole;
+  user?: { name: string; avatarUrl?: string }; // NEW: Add user prop for avatar
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -19,6 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
   onToggleCollapse,
   userRole = "student",
+  user,
 }) => {
   const NavItem = ({
     view,
@@ -150,6 +152,27 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div
         className={`${collapsed ? "p-3 mb-4" : "p-4 mx-4 mb-4"} border-t border-white/10 mt-auto`}
       >
+        {/* User Profile Section */}
+        {user && (
+          <div className={`flex items-center ${collapsed ? "justify-center mb-3" : "gap-3 mb-3 px-2"}`}>
+            {user.avatarUrl && (
+              <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-discord-accent/30 flex-shrink-0">
+                <img 
+                  src={user.avatarUrl} 
+                  alt={`${user.name}'s avatar`}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                <p className="text-xs text-discord-textMuted capitalize">{userRole}</p>
+              </div>
+            )}
+          </div>
+        )}
+        
         <button
           onClick={onLogout}
           className={`w-full flex items-center ${collapsed ? "justify-center px-2" : "gap-3 px-4"} py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all duration-300 font-medium group hover:scale-105 border border-transparent hover:border-red-500/20`}

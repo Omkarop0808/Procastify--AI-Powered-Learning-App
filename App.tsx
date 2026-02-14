@@ -61,11 +61,16 @@ const App: React.FC = () => {
         let profile = await StorageService.getUserProfile(firebaseUser.uid);
 
         if (!profile) {
+          // Generate avatar URL from Firebase photoURL or create one
+          const avatarUrl = firebaseUser.photoURL || 
+            `https://api.dicebear.com/7.x/notionists/svg?seed=${firebaseUser.displayName || firebaseUser.email}`;
+          
           profile = {
             id: firebaseUser.uid,
             isGuest: false,
             name: firebaseUser.displayName || deriveName(firebaseUser.email),
             email: firebaseUser.email || undefined,
+            avatarUrl: avatarUrl,
             freeTimeHours: 2,
             energyPeak: "morning",
             goal: "Productivity",
@@ -73,10 +78,15 @@ const App: React.FC = () => {
           };
           await StorageService.saveUserProfile(profile);
         } else {
-          // Always update email if it's missing or different (ensures existing profiles get email)
+          // Always update email and avatar if missing or different (ensures existing profiles get them)
           let needsUpdate = false;
           if (!profile.email && firebaseUser.email) {
             profile.email = firebaseUser.email;
+            needsUpdate = true;
+          }
+          if (!profile.avatarUrl) {
+            profile.avatarUrl = firebaseUser.photoURL || 
+              `https://api.dicebear.com/7.x/notionists/svg?seed=${profile.name}`;
             needsUpdate = true;
           }
           if (needsUpdate) {
@@ -410,6 +420,7 @@ const App: React.FC = () => {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         userRole={user.role}
+        user={user ? { name: user.name, avatarUrl: user.avatarUrl } : undefined}
       />
       <main
         className={`flex-1 ${sidebarCollapsed ? "ml-20" : "ml-64"} overflow-y-auto max-h-screen relative transition-all duration-300 ease-in-out`}

@@ -22,6 +22,7 @@ export interface UserPreferences {
   isGuest: boolean;
   name: string;
   email?: string; // NEW: Store user email
+  avatarUrl?: string; // NEW: Store user avatar URL
   role?: UserRole;
   freeTimeHours?: number;
   energyPeak?: "morning" | "afternoon" | "night";

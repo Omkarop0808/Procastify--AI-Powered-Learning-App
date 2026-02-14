@@ -86,13 +86,25 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onNavigate })
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-            Welcome back, {user?.name || 'Teacher'} <span className="animate-wave origin-bottom-right inline-block">👋</span>
-          </h1>
-          <p className="text-gray-400 mt-1">
-            Manage your classrooms and track student progress
-          </p>
+        <div className="flex items-center gap-4">
+          {/* User Avatar */}
+          {user?.avatarUrl && (
+            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-discord-accent/30 shadow-lg">
+              <img 
+                src={user.avatarUrl} 
+                alt={`${user.name}'s avatar`}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-white flex items-center gap-2">
+              Welcome back, {user?.name || 'Teacher'} <span className="animate-wave origin-bottom-right inline-block">👋</span>
+            </h1>
+            <p className="text-gray-400 mt-1">
+              Manage your classrooms and track student progress
+            </p>
+          </div>
         </div>
         <button
           onClick={() => onNavigate('classrooms')}

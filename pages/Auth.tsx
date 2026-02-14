@@ -69,16 +69,20 @@ const Auth: React.FC<AuthPageProps> = ({ onLoginSuccess, onGuestAccess, onBack }
         try {
             if (isSignUp) {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                // Explicitly update profile with Name
+                const avatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${fullName}`;
+                
+                // Explicitly update profile with Name and Avatar
                 await updateProfile(userCredential.user, {
                     displayName: fullName,
-                    photoURL: `https://api.dicebear.com/7.x/notionists/svg?seed=${fullName}` // Reddit-style notion avatars
+                    photoURL: avatarUrl
                 });
                 
                 // Pre-create profile in Firestore to ensure data consistency
                 await StorageService.saveUserProfile({
                     id: userCredential.user.uid,
                     name: fullName,
+                    email: email,
+                    avatarUrl: avatarUrl,
                     isGuest: false,
                     freeTimeHours: 2,
                     energyPeak: 'morning',
