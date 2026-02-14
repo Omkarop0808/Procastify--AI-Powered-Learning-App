@@ -1,42 +1,28 @@
-import React, { useState, useEffect } from "react";
-import {
-  ViewState,
-  UserPreferences,
-  Summary,
-  Note,
-  RoutineTask,
-  UserStats,
-  Flashcard,
-  NoteElement,
-  Folder,
-} from "./types";
-import { StorageService } from "./services/storageService";
-import { auth } from "./firebaseConfig";
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
-import Sidebar from "./components/Sidebar";
-import Landing from "./pages/Landing";
-import Dashboard from "./pages/Dashboard";
-import Summarizer from "./pages/Summarizer";
-import Notes from "./pages/Notes";
-import Routine from "./pages/Routine";
-import Focus from "./pages/Focus";
-import QuizPage from "./pages/Quiz";
-import NoteFeed from "./pages/NoteFeed";
-import NotesStore from "./pages/NotesStore";
-import Folders from "./pages/Folders";
-import Auth from "./pages/Auth";
-import RoleSelection from "./pages/RoleSelection";
-import TeacherDashboard from "./pages/TeacherDashboard";
-import Classrooms from "./pages/Classrooms";
-import ClassroomDetail from "./pages/ClassroomDetail";
-import StudentClassrooms from "./pages/StudentClassrooms";
-import StudentClassroomView from "./pages/StudentClassroomView";
-import { AlertCircle, LogIn, X, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { ViewState, UserPreferences, Summary, Note, RoutineTask, UserStats, Flashcard, NoteElement, Folder, UserRole } from './types';
+import { StorageService } from './services/storageService';
+import { auth } from './firebaseConfig';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { ThemeProvider } from './contexts/ThemeContext';
+import Sidebar from './components/Sidebar';
+import Landing from './pages/Landing';
+import Dashboard from './pages/Dashboard';
+import Summarizer from './pages/Summarizer';
+import Notes from './pages/Notes';
+import Routine from './pages/Routine';
+import Focus from './pages/Focus';
+import QuizPage from './pages/Quiz';
+import NoteFeed from './pages/NoteFeed';
+import NotesStore from './pages/NotesStore';
+import Auth from './pages/Auth';
+import RoleSelection from './pages/RoleSelection';
+import TeacherDashboard from './pages/TeacherDashboard';
+import Folders from './pages/Folders';
+import Classrooms from './pages/Classrooms';
+import ClassroomDetail from './pages/ClassroomDetail';
+import StudentClassrooms from './pages/StudentClassrooms';
+import StudentClassroomView from './pages/StudentClassroomView';
+import { AlertCircle, LogIn, X, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState | "folders">("landing");
@@ -51,6 +37,13 @@ const App: React.FC = () => {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedClassroomId, setSelectedClassroomId] = useState<string | undefined>(undefined);
+
+  // Auth State
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [authError, setAuthError] = useState("");
 
   // Folder filtering state
   const [activeFolderId, setActiveFolderId] = useState<
@@ -152,6 +145,20 @@ const App: React.FC = () => {
     StorageService.setSession(updatedUser);
     setUser(updatedUser);
     setView("dashboard");
+  };
+
+  const handleAuthSubmit = async () => {
+    setAuthError("");
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, emailInput, passwordInput);
+      } else {
+        await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+      }
+      setShowLoginModal(false);
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
   };
 
   const handleLogout = async () => {
@@ -341,10 +348,53 @@ const App: React.FC = () => {
 
   if (!user || view === "landing") {
     return (
-      <Landing
-        onLogin={() => setView("auth")}
-        onGuestAccess={handleGuestAccess}
-      />
+            <>
+                <Landing onLogin={() => setShowLoginModal(true)} onGuestAccess={handleGuestAccess} />
+
+                {/* Login Modal */}
+                {showLoginModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <div className="bg-app-panel p-8 rounded-2xl w-full max-w-md border border-app-border shadow-2xl animate-in zoom-in-95">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-app-text">{isSignUp ? 'Create Account' : 'Welcome Back'}</h2>
+                                <button onClick={() => setShowLoginModal(false)} className="text-app-textMuted hover:text-app-text"><X /></button>
+                            </div>
+
+                            {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{authError}</div>}
+
+                            <input
+                                type="email"
+                                className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#5865F2] mb-4"
+                                placeholder="Email"
+                                value={emailInput}
+                                onChange={(e) => setEmailInput(e.target.value)}
+                            />
+                            <input
+                                type="password"
+                                className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#5865F2] mb-6"
+                                placeholder="Password"
+                                value={passwordInput}
+                                onChange={(e) => setPasswordInput(e.target.value)}
+                            />
+
+                            <button
+                                onClick={handleAuthSubmit}
+                                disabled={!emailInput || !passwordInput}
+                                className="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 mb-4"
+                            >
+                                {isSignUp ? 'Sign Up' : 'Sign In'}
+                            </button>
+
+                            <p className="text-center text-sm text-app-textMuted">
+                                {isSignUp ? "Already have an account?" : "Don't have an account?"}
+                                <button onClick={() => setIsSignUp(!isSignUp)} className="ml-2 text-[#5865F2] hover:underline font-bold">
+                                    {isSignUp ? 'Sign In' : 'Sign Up'}
+                                </button>
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </>
     );
   }
 
