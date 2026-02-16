@@ -1,6 +1,7 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp, FirebaseApp } from "firebase/app";
+import { getAuth, Auth } from "firebase/auth";
+import { getFirestore, Firestore } from "firebase/firestore";
+import { getSecureKey } from "./services/secureKeyManager";
 
 
 const getEnv = (key: string) => {
@@ -15,7 +16,7 @@ const getEnv = (key: string) => {
 
 
 const firebaseConfig = {
-    apiKey: getEnv('FIREBASE_API_KEY'),
+    apiKey: getSecureKey('FIREBASE_API_KEY') || getEnv('FIREBASE_API_KEY'),
     authDomain: getEnv('FIREBASE_AUTH_DOMAIN'),
     projectId: getEnv('FIREBASE_PROJECT_ID'),
     storageBucket: getEnv('FIREBASE_STORAGE_BUCKET'),
@@ -23,13 +24,33 @@ const firebaseConfig = {
     appId: getEnv('FIREBASE_APP_ID')
 };
 
+// Check if Firebase is properly configured
+export const isFirebaseConfigured = (): boolean => {
+    return !!(
+        firebaseConfig.apiKey &&
+        firebaseConfig.apiKey !== 'AIzaSy_DUMMY_KEY_FOR_DEV_MODE' &&
+        firebaseConfig.authDomain &&
+        firebaseConfig.projectId &&
+        firebaseConfig.apiKey.length > 20 // Basic validation
+    );
+};
 
-if (!firebaseConfig.apiKey) {
-    console.warn("Firebase Configuration Missing! Authentication features will not work. Please check your .env file.");
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
 
-    firebaseConfig.apiKey = "AIzaSy_DUMMY_KEY_FOR_DEV_MODE";
+if (isFirebaseConfigured()) {
+    try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+    } catch (error) {
+        console.error('Failed to initialize Firebase:', error);
+    }
+} else {
+    console.warn("Firebase Configuration Missing or Invalid!");
+    console.warn("Please create a .env.local file with your Firebase configuration.");
+    console.warn("See SETUP.md for instructions.");
 }
 
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export { app, auth, db };

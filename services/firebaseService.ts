@@ -1,10 +1,19 @@
 import { db } from '../firebaseConfig';
 import { doc, deleteDoc, setDoc, getDoc, collection, getDocs, writeBatch, serverTimestamp, query, where, orderBy, Firestore } from 'firebase/firestore';
 import { Note } from '../types';
+import { apiRateLimiter } from './rateLimiter';
+import { sanitizeContent } from './validation';
+import logger from './securityLogger';
 
 export const FirebaseService = {
     // --- Notes ---
     saveNote: async (userId: string, note: Note) => {
+        // Rate Limiting
+        if (apiRateLimiter.isLimited(userId)) {
+            logger.logRateLimitViolation(userId, 'saveNote');
+            throw new Error('Rate limit exceeded. Please try again later.');
+        }
+
         const ref = doc(db, 'notes', note.id);
 
         // Ensure strictly managed fields
@@ -31,6 +40,11 @@ export const FirebaseService = {
         // Sanitize payload to remove undefined values which Firestore rejects
         const sanitizedPayload = sanitizePayload(payload);
 
+        // Additional Content Sanitization (XSS Prevention) for text fields
+        if (sanitizedPayload.title) {
+            sanitizedPayload.title = sanitizeContent(sanitizedPayload.title, 200);
+        }
+
         await setDoc(ref, sanitizedPayload, { merge: true });
     },
 
@@ -40,6 +54,12 @@ export const FirebaseService = {
     },
 
     saveNotesBatch: async (userId: string, notes: Note[]) => {
+        // Rate Limiting for Batch
+        if (apiRateLimiter.isLimited(userId)) {
+            logger.logRateLimitViolation(userId, 'saveNotesBatch');
+            throw new Error('Rate limit exceeded. Please try again later.');
+        }
+
         const batch = writeBatch(db);
         notes.forEach(note => {
             const ref = doc(db, 'notes', note.id);
@@ -57,6 +77,9 @@ export const FirebaseService = {
 
     // --- Public Store ---
     publishNote: async (userId: string, note: Note) => {
+        if (apiRateLimiter.isLimited(userId)) {
+            throw new Error('Rate limit exceeded.');
+        }
         // Single source of truth update
         const ref = doc(db, 'notes', note.id);
         await setDoc(ref, {

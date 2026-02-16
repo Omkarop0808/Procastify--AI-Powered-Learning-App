@@ -1,6 +1,6 @@
 import React from 'react';
 import { ViewState } from '../types';
-import { LayoutDashboard, FileText, BookOpen, Clock, BrainCircuit, Gamepad2, LogOut, Flame, Globe, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, FileText, BookOpen, Clock, BrainCircuit, Gamepad2, LogOut, Flame, Globe, PanelLeftClose, PanelLeftOpen, GraduationCap } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -87,6 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, onLogout, co
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 flex flex-col justify-evenly gap-1 overflow-y-auto no-scrollbar">
         <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <NavItem view="classrooms" icon={GraduationCap} label="Classrooms" />
         <NavItem view="summarizer" icon={FileText} label="Summarizer" />
         <NavItem view="notes" icon={BookOpen} label="My Notes" />
         <NavItem view="feed" icon={Flame} label="Learning Feed" />

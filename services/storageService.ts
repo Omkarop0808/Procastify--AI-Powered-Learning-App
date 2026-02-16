@@ -79,6 +79,7 @@ export const StorageService = {
             id: guestId,
             isGuest: true,
             name: `Guest #${shortId}`,
+            role: 'student', // Guest users default to student role
             freeTimeHours: 2,
             energyPeak: 'morning',
             goal: 'Productivity',

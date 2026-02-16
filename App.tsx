@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, UserPreferences, Summary, Note, RoutineTask, UserStats, Flashcard, NoteElement } from './types';
+import { ViewState, UserPreferences, Summary, Note, RoutineTask, UserStats, Flashcard, NoteElement, UserRole } from './types';
 import { StorageService } from './services/storageService';
-import { auth } from './firebaseConfig';
+import { auth, isFirebaseConfigured } from './firebaseConfig';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { authRateLimiter } from './services/rateLimiter';
+import { validateUserInput } from './services/validation';
+import { initializeSecureKeys } from './services/secureKeyManager';
+import logger from './services/securityLogger';
 import Sidebar from './components/Sidebar';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
@@ -13,6 +17,8 @@ import Focus from './pages/Focus';
 import QuizPage from './pages/Quiz';
 import NoteFeed from './pages/NoteFeed';
 import NotesStore from './pages/NotesStore';
+import Classrooms from './pages/Classrooms';
+import RoleSelection from './components/RoleSelection';
 import { AlertCircle, LogIn, X, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -29,6 +35,7 @@ const App: React.FC = () => {
     const [passwordInput, setPasswordInput] = useState('');
     const [authError, setAuthError] = useState('');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [showRoleSelection, setShowRoleSelection] = useState(false);
 
     const deriveName = (email?: string | null) => {
         if (!email) return 'User';
@@ -36,13 +43,22 @@ const App: React.FC = () => {
     };
 
     useEffect(() => {
+        // Initialize security keys
+        initializeSecureKeys();
+
+        // Don't set up auth listener if Firebase is not configured
+        if (!auth || !isFirebaseConfigured()) {
+            setLoadingAuth(false);
+            return;
+        }
+
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
 
                 let profile = await StorageService.getUserProfile(firebaseUser.uid);
 
                 if (!profile) {
-
+                    // New user - create profile without role (will be set via role selection)
                     profile = {
                         id: firebaseUser.uid,
                         isGuest: false,
@@ -51,8 +67,18 @@ const App: React.FC = () => {
                         energyPeak: 'morning',
                         goal: 'Productivity',
                         distractionLevel: 'medium'
+                        // role is intentionally undefined - will be set via role selection
                     };
                     await StorageService.saveUserProfile(profile);
+                }
+
+                // Check if role is missing - show role selection
+                if (!profile.role) {
+                    StorageService.setSession(profile);
+                    setUser(profile);
+                    setShowRoleSelection(true);
+                    setLoadingAuth(false);
+                    return;
                 }
 
                 StorageService.setSession(profile);
@@ -63,6 +89,11 @@ const App: React.FC = () => {
 
                 const guestUser = StorageService.getGuestSession();
                 if (guestUser) {
+                    // Guest users default to student role
+                    if (!guestUser.role) {
+                        guestUser.role = 'student';
+                        await StorageService.saveUserProfile(guestUser);
+                    }
                     StorageService.setSession(guestUser);
                     setUser(guestUser);
                     loadUserData();
@@ -96,8 +127,9 @@ const App: React.FC = () => {
 
 
     const handleGuestAccess = () => {
-
         const guestUser = StorageService.createGuestUser();
+        // Guest users default to student role
+        guestUser.role = 'student';
         StorageService.saveUserProfile(guestUser);
         StorageService.setSession(guestUser);
         setUser(guestUser);
@@ -105,22 +137,92 @@ const App: React.FC = () => {
         setView('dashboard');
     };
 
+    const handleRoleSelection = async (role: UserRole) => {
+        if (!user) return;
+
+        const updatedUser = { ...user, role };
+        await StorageService.saveUserProfile(updatedUser);
+        StorageService.setSession(updatedUser);
+        setUser(updatedUser);
+        setShowRoleSelection(false);
+        loadUserData();
+        setView('dashboard');
+    };
+
     const handleAuthSubmit = async () => {
         if (!emailInput || !passwordInput) return;
         setAuthError('');
+
+        // Validate Input
+        const emailValidation = validateUserInput(emailInput, 'email');
+        if (!emailValidation.valid) {
+            setAuthError(emailValidation.errors[0]);
+            logger.logValidationError('email', emailValidation.errors[0]);
+            return;
+        }
+
+        const passwordValidation = validateUserInput(passwordInput, 'password');
+        // Only enforce strict password rules on Signup, allow legacy/weak passwords on Login
+        if (isSignUp && !passwordValidation.valid) {
+            setAuthError(passwordValidation.errors[0]);
+            logger.logValidationError('password', passwordValidation.errors[0]);
+            return;
+        }
+
+        // Rate limiting on authentication
+        const identifier = emailValidation.sanitized;
+        if (authRateLimiter.isLimited(identifier)) {
+            setAuthError('Too many login attempts. Please try again later.');
+            logger.logRateLimitViolation(identifier, isSignUp ? '/signup' : '/signin');
+            return;
+        }
+
+        // Check if Firebase is configured
+        if (!auth) {
+            setAuthError('Firebase is not configured. Please check your .env.local file with valid Firebase credentials. See SETUP.md for instructions.');
+            logger.logSecurityIncident('Firebase not configured', 'WARNING' as any);
+            return;
+        }
+
         try {
             if (isSignUp) {
-                await createUserWithEmailAndPassword(auth, emailInput, passwordInput);
+                await createUserWithEmailAndPassword(auth, emailValidation.sanitized, passwordInput);
+                logger.logAuthEvent('User signed up successfully', auth.currentUser?.uid || '', true, { email: identifier });
             } else {
-                await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+                await signInWithEmailAndPassword(auth, emailValidation.sanitized, passwordInput);
+                logger.logAuthEvent('User signed in successfully', auth.currentUser?.uid || '', true, { email: identifier });
             }
             setShowLoginModal(false);
             setEmailInput('');
             setPasswordInput('');
         } catch (e: any) {
-            console.error(e);
-            setAuthError(e.message || 'Authentication failed');
+            const errorMessage = getAuthErrorMessage(e, isSignUp);
+            setAuthError(errorMessage);
+            logger.logAuthEvent(
+                `Authentication failed: ${e.code || 'Unknown error'}`,
+                identifier,
+                false,
+                { code: e.code, message: e.message }
+            );
         }
+    };
+
+    const getAuthErrorMessage = (error: any, isSignUp: boolean): string => {
+        const errorCode = error.code || '';
+        const defaultMessage = isSignUp ? 'signup failed' : 'signin failed';
+
+        const errorMap: Record<string, string> = {
+            'auth/api-key-not-valid': 'Firebase API key is invalid. Please check your .env.local file.',
+            'auth/invalid-email': 'Invalid email address. Please check and try again.',
+            'auth/weak-password': 'Password must be at least 8 characters with uppercase, lowercase, number, and special character.',
+            'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
+            'auth/user-not-found': 'No account found with this email. Please sign up first.',
+            'auth/wrong-password': 'Incorrect password. Please try again.',
+            'auth/too-many-requests': 'Too many failed login attempts. Please try again later.',
+            'auth/operation-not-allowed': 'Account creation is not enabled. Please contact support.'
+        };
+
+        return errorMap[errorCode] || error.message || defaultMessage;
     };
 
     const handleLogout = async () => {
@@ -288,6 +390,18 @@ const App: React.FC = () => {
                                 <button onClick={() => setShowLoginModal(false)} className="text-gray-400 hover:text-white"><X /></button>
                             </div>
 
+                            {!isFirebaseConfigured() && (
+                                <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm rounded-lg">
+                                    <p className="font-semibold mb-2">⚠️ Firebase Not Configured</p>
+                                    <p className="mb-2">To use authentication and cloud features, please:</p>
+                                    <ol className="list-decimal list-inside space-y-1 text-xs">
+                                        <li>Create a <code className="bg-black/30 px-1 rounded">.env.local</code> file in the project root</li>
+                                        <li>Add your Firebase configuration (see <code className="bg-black/30 px-1 rounded">SETUP.md</code>)</li>
+                                        <li>Restart the development server</li>
+                                    </ol>
+                                </div>
+                            )}
+
                             {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{authError}</div>}
 
                             <input
@@ -419,6 +533,13 @@ const App: React.FC = () => {
                         onNavigate={setView}
                     />
                 )}
+
+                {view === 'classrooms' && (
+                    <Classrooms
+                        user={user}
+                        onNavigate={setView}
+                    />
+                )}
             </main>
 
 
@@ -429,6 +550,18 @@ const App: React.FC = () => {
                             <h2 className="text-2xl font-bold text-white">Sync Account</h2>
                             <button onClick={() => setShowLoginModal(false)} className="text-gray-400 hover:text-white"><X /></button>
                         </div>
+
+                        {!isFirebaseConfigured() && (
+                            <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm rounded-lg">
+                                <p className="font-semibold mb-2">⚠️ Firebase Not Configured</p>
+                                <p className="mb-2">To use authentication and cloud features, please:</p>
+                                <ol className="list-decimal list-inside space-y-1 text-xs">
+                                    <li>Create a <code className="bg-black/30 px-1 rounded">.env.local</code> file in the project root</li>
+                                    <li>Add your Firebase configuration (see <code className="bg-black/30 px-1 rounded">SETUP.md</code>)</li>
+                                    <li>Restart the development server</li>
+                                </ol>
+                            </div>
+                        )}
 
                         {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{authError}</div>}
 
@@ -462,6 +595,13 @@ const App: React.FC = () => {
                         </p>
                     </div>
                 </div>
+            )}
+
+            {showRoleSelection && user && (
+                <RoleSelection
+                    onSelect={handleRoleSelection}
+                    userName={user.name}
+                />
             )}
 
         </div>
